@@ -1,111 +1,442 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Serif+Display&display=swap');
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --primary:       #00667D;
+  --primary-light: #e0f4f7;
+  --primary-mid:   #b2dce4;
+  --primary-dark:  #004f60;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --bg:            #f0f8fa;
+  --surface:       #ffffff;
+  --surface-alt:   #f7fbfc;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
+  --text:          #374151;
+  --text-muted:    #6b7280;
+  --text-heading:  #0a2b32;
+
+  --border:        #d1eaee;
+  --border-hover:  #a0d4dc;
+
+  --row-hover:     #f0f8fa;
+  --row-selected:  #ddf2f6;
+  --row-selected-border: #00667D;
+
+  --badge-bg:      #e0f4f7;
+  --badge-text:    #004f60;
+  --badge-border:  #a0d4dc;
+
+  --sans:   'DM Sans', system-ui, sans-serif;
+  --serif:  'DM Serif Display', Georgia, serif;
+
+  font: 16px/1.6 var(--sans);
   color: var(--text);
   background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+    --primary:       #1fa8c3;
+    --primary-light: #0d2f38;
+    --primary-mid:   #1a4f5e;
+    --primary-dark:  #5cd3e8;
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+    --bg:            #0d1e22;
+    --surface:       #132830;
+    --surface-alt:   #0f2229;
+
+    --text:          #c8dde2;
+    --text-muted:    #7da8b4;
+    --text-heading:  #e8f6f9;
+
+    --border:        #1e4a56;
+    --border-hover:  #2e6a7a;
+
+    --row-hover:     #162f38;
+    --row-selected:  #1a404c;
+    --row-selected-border: #1fa8c3;
+
+    --badge-bg:      #0e2f38;
+    --badge-text:    #5cd3e8;
+    --badge-border:  #1e5a6a;
   }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+*, *::before, *::after {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  background: var(--bg);
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
+/* ── Layout ── */
+
+.vet-page {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+/* ── Page header ── */
+
+.vet-page__title {
+  font-family: var(--serif);
+  font-size: 2rem;
+  font-weight: 400;
+  color: var(--text-heading);
+  margin: 0 0 0.25rem;
+  letter-spacing: -0.5px;
+}
+
+.vet-page__subtitle {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin: 0 0 1.5rem;
+}
+
+/* ── Filters bar ── */
+
+.vet-filters {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.vet-input {
+  padding: 0.55rem 0.85rem 0.55rem 2.2rem;
+  font-size: 0.9rem;
+  font-family: var(--sans);
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+}
+
+.vet-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 102, 125, 0.12);
+}
+
+.vet-search-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+}
+
+.vet-search-icon {
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+  font-size: 1rem;
+}
+
+.vet-select {
+  padding: 0.55rem 2rem 0.55rem 0.85rem;
+  font-size: 0.9rem;
+  font-family: var(--sans);
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.vet-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0, 102, 125, 0.12);
+}
+
+/* ── Main layout: table + drawer ── */
+
+.vet-layout {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+}
+
+/* ── Table ── */
+
+.vet-table-wrap {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.vet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.vet-table thead {
+  background: var(--surface-alt);
+}
+
+.vet-table th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--primary);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.vet-table td {
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+
+.vet-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.vet-table tbody tr {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.vet-table tbody tr:hover {
+  background: var(--row-hover);
+}
+
+.vet-table tbody tr.selected {
+  background: var(--row-selected);
+  outline: 2px solid var(--row-selected-border);
+  outline-offset: -2px;
+}
+
+.vet-table .empty-row td {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 2rem;
+  font-style: italic;
+  cursor: default;
+}
+
+.vet-table-footer {
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+/* Species pill */
+.vet-pill {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--badge-bg);
+  color: var(--badge-text);
+  border: 1px solid var(--badge-border);
+}
+
+/* ── Drawer ── */
+
+.vet-drawer {
+  width: 300px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  position: sticky;
+  top: 1rem;
+  align-self: flex-start;
+}
+
+.vet-drawer__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.1rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--primary);
+}
+
+.vet-drawer__header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-family: var(--sans);
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.vet-drawer__close {
+  background: rgba(255,255,255,0.15);
+  border: none;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #ffffff;
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: background 0.15s;
+}
+
+.vet-drawer__close:hover {
+  background: rgba(255,255,255,0.28);
+}
+
+.vet-drawer__body {
+  padding: 1rem 1.1rem;
+}
+
+.vet-drawer__section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin: 0 0 0.6rem;
+}
+
+.vet-drawer__fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 0.75rem;
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+}
+
+.vet-drawer__fields dt {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.vet-drawer__fields dd {
+  margin: 0;
   font-weight: 500;
-  color: var(--text-h);
+  color: var(--text-heading);
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+.vet-drawer__divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0.75rem 0;
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
+
+.vet-drawer__thumbnail {
+  width: 100%;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+  margin-bottom: 0.7rem;
+  border: 1px solid var(--border);
 }
-p {
+
+.vet-drawer__abstract {
+  font-size: 0.855rem;
+  line-height: 1.6;
+  color: var(--text);
+  margin: 0 0 0.65rem;
+}
+
+.vet-drawer__link {
+  font-size: 0.85rem;
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.vet-drawer__link:hover {
+  text-decoration: underline;
+}
+
+.vet-drawer__muted {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
   margin: 0;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
+.vet-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  background: var(--badge-bg);
+  color: var(--badge-text);
+  border: 1px solid var(--badge-border);
   border-radius: 4px;
-  color: var(--text-h);
+  padding: 0 5px;
+  margin-left: 6px;
+  vertical-align: middle;
+  text-transform: uppercase;
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+/* ── Loading / error states ── */
+
+.vet-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  font-size: 1rem;
+  color: var(--text-muted);
+  gap: 0.5rem;
+}
+
+.vet-state--error {
+  color: #b91c1c;
+}
+
+/* ── Spinner ── */
+
+.vet-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 768px) {
+  .vet-layout {
+    flex-direction: column;
+  }
+  .vet-drawer {
+    width: 100%;
+    position: static;
+  }
+  .vet-page__title {
+    font-size: 1.5rem;
+  }
 }
