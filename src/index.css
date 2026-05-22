@@ -69,6 +69,11 @@
 body {
   margin: 0;
   background: var(--bg);
+  background-image: url('/fondo.jpeg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  background-repeat: no-repeat;
 }
 
 /* ── Layout ── */
@@ -439,4 +444,43 @@ body {
   .vet-page__title {
     font-size: 1.5rem;
   }
+}
+
+.vet-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0.75rem 2rem;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.vet-header__left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.vet-header__logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+
+.vet-header__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-heading);
+  font-family: var(--sans);
+}
+
+.vet-header__sub {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }

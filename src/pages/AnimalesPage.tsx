@@ -3,6 +3,7 @@ import { useOntology } from '../hooks/useOntology';
 import { useDbpediaEnrich } from '../hooks/useDbpediaEnrich';
 import { type Individual } from '../services/ontologyService';
 import { getAnimales } from '../repositories/ontologyRepository';
+import logo from '../assets/images/logoveterinaria.png';
 
 // ── AnimalDrawer ──────────────────────────────────────────────────────────────
 
@@ -157,6 +158,21 @@ export function AnimalesPage() {
 
   // ── Page ──
   return (
+    <>
+    <header className="vet-header">
+      <div className="vet-header__left">
+        <img
+          src={logo}
+          alt="Logo Veterinaria"
+          className="vet-header__logo"
+        />
+        <div>
+          <p className="vet-header__title">Veterinaria</p>
+          <p className="vet-header__sub">Buscador Semático</p>
+        </div>
+      </div>
+    </header>
+
     <div className="vet-page">
       <h1 className="vet-page__title">Animales</h1>
       <p className="vet-page__subtitle">
@@ -247,5 +263,6 @@ export function AnimalesPage() {
         )}
       </div>
     </div>
+  </>
   );
 }
