@@ -206,6 +206,9 @@ export function AnimalesPage() {
       </div>
 
       {/* Table + Drawer */}
+      {search.trim() === '' ? (
+      <div className="vet-empty-state"/>
+    ) : (
       <div className="vet-layout">
         {/* Table */}
         <div className="vet-table-wrap">
@@ -262,6 +265,7 @@ export function AnimalesPage() {
           <AnimalDrawer animal={selected} onClose={() => setSelected(null)} />
         )}
       </div>
+    )}
     </div>
   </>
   );
