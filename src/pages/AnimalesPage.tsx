@@ -4,6 +4,7 @@ import { useDbpediaEnrich } from '../hooks/useDbpediaEnrich';
 import { type Individual } from '../services/ontologyService';
 import { getAnimales } from '../repositories/ontologyRepository';
 import logo from '../assets/images/logoveterinaria.png';
+import { Search } from 'lucide-react';
 
 // ── AnimalDrawer ──────────────────────────────────────────────────────────────
 
@@ -168,21 +169,23 @@ export function AnimalesPage() {
         />
         <div>
           <p className="vet-header__title">Veterinaria</p>
-          <p className="vet-header__sub">Buscador Semático</p>
+          <p className="vet-header__sub font-open-sans text-sm">Buscador Semático</p>
         </div>
       </div>
     </header>
 
     <div className="vet-page">
-      <h1 className="vet-page__title">Animales</h1>
-      <p className="vet-page__subtitle">
+      <h1 className="vet-page__title">Buscador Semántico Veterinario</h1>
+      {/* <p className="vet-page__subtitle">
         {animales.length} registros en la ontología
-      </p>
+      </p> */}
 
       {/* Filters */}
       <div className="vet-filters">
         <div className="vet-search-wrapper">
-          <span className="vet-search-icon" aria-hidden="true">🔍</span>
+          <span className="vet-search-icon" aria-hidden="true">
+            <Search size={16} />
+          </span>
           <input
             className="vet-input"
             style={{ width: '100%' }}
