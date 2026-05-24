@@ -20,7 +20,7 @@ poblar manualmente el n3 `Store`. n3 se usa únicamente como índice de triples
 
 ### 1. Fetch del archivo
 ```typescript
-const res = await fetch('/ontologia/Ontologia_veterinaria2.rdf');
+const res = await fetch('/ontologia/Ontologia_Veterinaria_DEPURADA.owl');
 const text = await res.text();
 ```
 
