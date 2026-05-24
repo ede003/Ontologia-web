@@ -53,8 +53,43 @@ SELECT ?subject ?predicate ?object WHERE {
   return Array.from(bySubject.entries()).map(([uri, props]) => ({ uri, props }));
 }
 
-export function getAnimales(store: Store): Promise<Individual[]> {
-  return getIndividualsByClass(store, 'Animal');
+export async function getAnimales(store: Store): Promise<Individual[]> {
+  const sparql = `${PREFIXES}
+SELECT ?animal ?predicate ?object ?nombreEnfermedad WHERE {
+  ?animal rdf:type vet:Animal .
+  ?animal ?predicate ?object .
+
+  OPTIONAL {
+    ?animal ?relacionEnfermedad ?enfermedad .
+    FILTER(?relacionEnfermedad IN (vet:tieneEnfermedad, vet:tipoEnfermedad))
+    ?enfermedad vet:nombreEnfermedad ?nombreEnfermedad .
+  }
+}`;
+
+  const stream = await engine.queryBindings(sparql, { sources: [store] });
+  const rows = await stream.toArray();
+
+  const bySubject = new Map<string, Record<string, string>>();
+
+  for (const row of rows) {
+    const animal = row.get('animal')?.value;
+    const predicate = row.get('predicate')?.value;
+    const object = row.get('object')?.value;
+    const nombreEnfermedad = row.get('nombreEnfermedad')?.value;
+
+    if (!animal) continue;
+    if (!bySubject.has(animal)) bySubject.set(animal, {});
+
+    if (predicate && object) {
+      bySubject.get(animal)![localName(predicate)] = object;
+    }
+
+    if (nombreEnfermedad) {
+      bySubject.get(animal)!.enfermedades = nombreEnfermedad;
+    }
+  }
+
+  return Array.from(bySubject.entries()).map(([uri, props]) => ({ uri, props }));
 }
 
 export function getVeterinarios(store: Store): Promise<Individual[]> {
