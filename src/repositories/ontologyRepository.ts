@@ -60,8 +60,14 @@ SELECT ?animal ?predicate ?object ?nombreEnfermedad WHERE {
   ?animal ?predicate ?object .
 
   OPTIONAL {
-    ?animal ?relacionEnfermedad ?enfermedad .
-    FILTER(?relacionEnfermedad IN (vet:tieneEnfermedad, vet:tipoEnfermedad))
+    {
+      ?animal ?relacionEnfermedad ?enfermedad .
+      FILTER(?relacionEnfermedad IN (vet:tieneEnfermedad, vet:tipoEnfermedad))
+    }
+    UNION
+    {
+      ?enfermedad vet:afectaA ?animal .
+    }
     ?enfermedad vet:nombreEnfermedad ?nombreEnfermedad .
   }
 }`;
