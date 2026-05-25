@@ -1,4 +1,6 @@
-import { queryDBpedia, type DbpediaAnimalInfo, type DbpediaEnfermedadInfo } from '../services/dbpediaService';
+// Builds SPARQL queries for DBpedia and returns raw result rows.
+// No intermediate typed objects — callers read binding variables directly.
+import { queryDBpedia } from '../services/dbpediaService';
 import { resolveAnimalSlug, resolveEnfermedadSlug } from '../maps/dbpediaMaps';
 
 function buildAnimalQuery(slug: string): string {
@@ -29,33 +31,19 @@ SELECT ?abstract ?page WHERE {
 export async function getAnimalInfo(
   especie: string,
   raza: string,
-): Promise<DbpediaAnimalInfo> {
+): Promise<Record<string, string>[]> {
   const slug = resolveAnimalSlug(raza, especie);
-  if (!slug) return {};
-
-  const bindings = await queryDBpedia(buildAnimalQuery(slug));
-  if (bindings.length === 0) return {};
-
-  const row = bindings[0];
-  return {
-    abstract:  row.abstract?.value,
-    thumbnail: row.thumbnail?.value,
-    wikiPage:  row.page?.value,
-  };
+  console.log(`[dbpediaRepository] getAnimalInfo(especie="${especie}", raza="${raza}") → slug="${slug ?? 'NO ENCONTRADO'}"`)
+  if (!slug) return [];
+  const query = buildAnimalQuery(slug);
+  console.log('[dbpediaRepository] Query DBpedia:\n' + query)
+  return queryDBpedia(query);
 }
 
 export async function getEnfermedadInfo(
   nombreEnfermedad: string,
-): Promise<DbpediaEnfermedadInfo> {
+): Promise<Record<string, string>[]> {
   const slug = resolveEnfermedadSlug(nombreEnfermedad);
-  if (!slug) return {};
-
-  const bindings = await queryDBpedia(buildEnfermedadQuery(slug));
-  if (bindings.length === 0) return {};
-
-  const row = bindings[0];
-  return {
-    abstract: row.abstract?.value,
-    wikiPage: row.page?.value,
-  };
+  if (!slug) return [];
+  return queryDBpedia(buildEnfermedadQuery(slug));
 }

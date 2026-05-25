@@ -1,24 +1,9 @@
-// es.dbpedia.org/sparql serves full dbo:abstract in Spanish (CORS enabled).
-// dbpedia.org/sparql only exposes dbo:description (≤ 5 words) — not useful.
+// Sends SPARQL to es.dbpedia.org and returns raw binding rows.
+// Each row is a plain Record<variable, value> — no intermediate typed objects.
 const ENDPOINT = 'https://es.dbpedia.org/sparql';
 const TIMEOUT_MS = 8000;
 
-export interface DbpediaAnimalInfo {
-  abstract?: string;
-  thumbnail?: string;
-  wikiPage?: string;
-}
-
-export interface DbpediaEnfermedadInfo {
-  abstract?: string;
-  wikiPage?: string;
-}
-
-export interface SparqlBinding {
-  [varName: string]: { type: string; value: string; 'xml:lang'?: string } | undefined;
-}
-
-export async function queryDBpedia(sparql: string): Promise<SparqlBinding[]> {
+export async function queryDBpedia(sparql: string): Promise<Record<string, string>[]> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -29,10 +14,17 @@ export async function queryDBpedia(sparql: string): Promise<SparqlBinding[]> {
     });
     clearTimeout(timer);
     if (!res.ok) return [];
-    const rawText = await res.text();
-    const json = JSON.parse(rawText) as { results?: { bindings?: SparqlBinding[] } };
-    return json?.results?.bindings ?? [];
-  } catch {
+    const data = await res.json() as {
+      results?: { bindings?: Record<string, { value: string }>[] };
+    };
+    const bindings = data?.results?.bindings ?? [];
+    const rows = bindings.map(row =>
+      Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v.value]))
+    );
+    console.log(`[dbpediaService] Respuesta: ${rows.length} filas`, rows.length > 0 ? rows[0] : '(vacío)');
+    return rows;
+  } catch (err) {
+    console.warn('[dbpediaService] Fetch falló o timeout:', err);
     clearTimeout(timer);
     return [];
   }

@@ -60,14 +60,7 @@ SELECT ?animal ?predicate ?object ?nombreEnfermedad WHERE {
   ?animal ?predicate ?object .
 
   OPTIONAL {
-    {
-      ?animal ?relacionEnfermedad ?enfermedad .
-      FILTER(?relacionEnfermedad IN (vet:tieneEnfermedad, vet:tipoEnfermedad))
-    }
-    UNION
-    {
-      ?enfermedad vet:afectaA ?animal .
-    }
+    ?enfermedad vet:afectaA ?animal .
     ?enfermedad vet:nombreEnfermedad ?nombreEnfermedad .
   }
 }`;
@@ -95,7 +88,14 @@ SELECT ?animal ?predicate ?object ?nombreEnfermedad WHERE {
     }
   }
 
-  return Array.from(bySubject.entries()).map(([uri, props]) => ({ uri, props }));
+  const animales = Array.from(bySubject.entries()).map(([uri, props]) => ({ uri, props }));
+  console.log(`[ontologyRepository] getAnimales → ${animales.length} animales cargados`);
+  if (animales.length > 0) {
+    const sample = animales[0];
+    console.log(`[ontologyRepository] Ejemplo URI: ${sample.uri}`);
+    console.log(`[ontologyRepository] Ejemplo props:`, sample.props);
+  }
+  return animales;
 }
 
 export function getVeterinarios(store: Store): Promise<Individual[]> {
