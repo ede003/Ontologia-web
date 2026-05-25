@@ -7,92 +7,101 @@
 
 n3 provee el `Store` (índice RDF) pero no tiene motor SPARQL. Para cumplir el
 requisito de "consultas siempre con SPARQL" se usa **Comunica**, que implementa
-SPARQL 1.1 completo y acepta cualquier store compatible con la interfaz RDF.js
-(como n3's `Store`).
+SPARQL 1.1 completo y acepta cualquier store compatible con la interfaz RDF.js.
 
 ```typescript
 import { QueryEngine } from '@comunica/query-sparql-rdfjs';
-const engine = new QueryEngine(); // instancia única, reutilizable
+const engine = new QueryEngine(); // instancia única, stateless
 ```
 
-El engine es **stateless** — no guarda estado entre queries, solo ejecuta y
-devuelve resultados.
+## Dos capas de consulta SPARQL
 
-## Función principal: `getIndividualsByClass`
+### 1. Carga base (`ontologyRepository.ts`)
 
-```typescript
-export async function getIndividualsByClass(
-  store: Store,
-  className: string,
-): Promise<Individual[]>
-```
-
-### Query SPARQL generado
-
-Obtiene en una sola pasada la pertenencia a clase y todas las propiedades:
+Carga todos los animales al inicio para poblar el select de especie y el drawer.
+La query de `getAnimales` obtiene en una sola pasada propiedades y enfermedades:
 
 ```sparql
-PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-PREFIX owl:  <http://www.w3.org/2002/07/owl#>
-PREFIX vet:  <http://www.semanticweb.org/grupo14/ontologias/veterinaria#>
-
-SELECT ?subject ?predicate ?object WHERE {
-  ?subject rdf:type <http://...#Animal> .
-  ?subject ?predicate ?object .
+SELECT ?animal ?predicate ?object ?nombreEnfermedad WHERE {
+  ?animal rdf:type vet:Animal .
+  ?animal ?predicate ?object .
+  OPTIONAL {
+    ?enfermedad vet:afectaA ?animal .
+    ?enfermedad vet:nombreEnfermedad ?nombreEnfermedad .
+  }
 }
 ```
 
-El join entre la restricción de tipo y todos los predicados evita hacer N+1
-queries (una por cada individuo).
+La relación correcta es `vet:afectaA` (desde Enfermedad hacia Animal).
 
-### Procesamiento de resultados
+### 2. Búsqueda inteligente (`src/utils/`)
+
+Cuando el usuario escribe en el buscador, el pipeline construye y ejecuta una
+query dinámica contra el mismo `Store`:
+
+```
+src/utils/queryParser.ts   → extrae términos del texto libre
+src/utils/entityDetector.ts → mapea términos a clases de la ontología
+src/utils/sparqlBuilder.ts  → construye la query SPARQL (relacional, una clase, o fallback)
+src/utils/sparqlExecutor.ts → engine.queryBindings() → Record<string, string>[]
+```
+
+Ver [../search-architecture.md](../search-architecture.md) para el diagrama completo.
+
+## `sparqlExecutor.ts`
+
+Wrapper sobre Comunica que devuelve filas planas. Usa `row.forEach` en lugar de
+`for...of row.entries()`: en Comunica v5 el método `entries()` retorna un `Iterator`
+(no un `IterableIterator`), por lo que `for...of` falla en runtime.
 
 ```typescript
-const stream = await engine.queryBindings(sparql, { sources: [store] });
-const rows = await stream.toArray();
-
-const bySubject = new Map<string, Record<string, string>>();
-for (const row of rows) {
-  const s = row.get('subject')?.value;
-  const p = row.get('predicate')?.value;
-  const o = row.get('object')?.value;
-  if (!bySubject.has(s)) bySubject.set(s, {});
-  bySubject.get(s)![localName(p)] = o;   // localName: "vet:#color" → "color"
+export async function runQuery(store: Store, sparqlQuery: string): Promise<Record<string, string>[]> {
+  const stream = await engine.queryBindings(sparqlQuery, { sources: [store] })
+  const rows   = await stream.toArray()
+  return rows.map(row => {
+    const result: Record<string, string> = {}
+    row.forEach((term, key) => { result[key.value] = term.value })
+    return result
+  })
 }
 ```
 
-El resultado es un array de `Individual`:
-```typescript
-interface Individual {
-  uri: string;                      // IRI completo del individuo
-  props: Record<string, string>;    // { nombreAnimal: "Thor", especie: "Canino", ... }
+## Tipos de query generadas por `sparqlBuilder`
+
+| Tipo | Cuándo | Ejemplo |
+|------|--------|---------|
+| Relacional | 2 clases detectadas + join conocido | `animales con otitis` |
+| Una clase | 1 clase detectada | `enfermedades`, `perros` |
+| Fallback | Ninguna clase detectada | texto libre → UNION en labels |
+
+### Filtro de especie en queries relacionales
+
+Cuando el término primario (o secundario) es una palabra de especie animal
+(`perro`, `gato`, `loro`, …), la query relacional filtra sobre `vet:especie` en lugar
+de hacer `CONTAINS` sobre `vet:nombreAnimal`. Sin este ajuste, "perro con otitis"
+buscaría "perro" en el nombre del animal ("Buddy", "Canela") y devolvería 0 resultados.
+
+```sparql
+-- "perro con otitis" genera:
+SELECT ?subject ?subjectName ?object ?objectName WHERE {
+  ?subject rdf:type vet:Animal .
+  ?object  rdf:type vet:Enfermedad .
+  ?object vet:afectaA ?subject .
+  OPTIONAL { ?subject vet:nombreAnimal ?subjectName }
+  OPTIONAL { ?object  vet:nombreEnfermedad ?objectName }
+  OPTIONAL { ?subject vet:especie ?subjectEspecie }   -- añadido para especies
+  FILTER(LCASE(?subjectEspecie) = "perro")            -- filtra especie, no nombre
+  FILTER(CONTAINS(LCASE(?objectName), "otitis"))
 }
 ```
 
-## Funciones específicas por clase
+La lógica está en `resolveSpeciesValue()` de `entityDetector.ts`, que devuelve el
+valor exacto de `vet:especie` para términos de especie, o `null` para el resto.
 
-Todas delegan a `getIndividualsByClass` con el nombre de clase correspondiente:
+## Prefijo de la ontología
 
-| Función | Clase URI |
-|---------|-----------|
-| `getAnimales(store)` | `vet:#Animal` |
-| `getVeterinarios(store)` | `vet:#Veterinario` |
-| `getEnfermedades(store)` | `vet:#Enfermedad` |
-| `getMedicamentos(store)` | `vet:#Medicamento` |
-| `getConsultas(store)` | `vet:#Consulta` |
-
-Todas son `async` porque Comunica opera sobre streams.
-
-## Uso desde la UI
-
-```typescript
-// En AnimalesPage.tsx
-useEffect(() => {
-  if (!store) return;
-  getAnimales(store).then(result => setAnimales(result));
-}, [store]);
+```
+vet: <http://www.semanticweb.org/grupo14/ontologias/veterinaria#>
 ```
 
-El `store` solo está disponible después de que `useOntology` termine de cargar,
-por eso se usa `useEffect` con `[store]` como dependencia.
+Usado en todos los queries como `PREFIX vet: <...>`.

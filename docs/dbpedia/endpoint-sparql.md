@@ -1,97 +1,43 @@
 # Endpoint SPARQL de DBpedia
 
-**Archivo fuente:** `src/services/dbpediaService.ts`  
-**Función base:** `queryDBpedia(sparql: string): Promise<SparqlBinding[]>`
-
-> Los query builders y las funciones `getAnimalInfo`/`getEnfermedadInfo` están en
-> `src/repositories/dbpediaRepository.ts`. Los mapas de slugs están en `src/maps/dbpediaMaps.ts`.
-
-## Diagnóstico: por qué `dbpedia.org/sparql` no funcionaba
-
-Durante el desarrollo se detectó que el endpoint principal `https://dbpedia.org/sparql`
-devolvía `bindings: []` incluso para recursos conocidos como `dbr:Pug`.
-
-La causa: `dbpedia.org/sparql` **no expone `dbo:abstract`** en su grafo por defecto.
-Solo tiene `dbo:description`, que es un texto de 3-5 palabras ("Chinese dog breed").
-
-```bash
-# Predicados disponibles para dbr:Pug en dbpedia.org:
-rdf:type, owl:sameAs, rdfs:label, dct:subject,
-dbo:wikiPageWikiLink, dbo:description,   ← corto
-dbo:thumbnail, foaf:depiction, ...
-# dbo:abstract → ausente
-```
+**Archivos:** `src/services/dbpediaService.ts`, `src/repositories/dbpediaRepository.ts`
 
 ## Endpoint adoptado: `es.dbpedia.org/sparql`
 
-El endpoint de la DBpedia en español sí sirve `dbo:abstract` completo.
-Acepta los mismos URIs `http://dbpedia.org/resource/...` (linked via `owl:sameAs`).
-Tiene CORS habilitado (`Access-Control-Allow-Origin: *`).
+El endpoint principal `dbpedia.org/sparql` no expone `dbo:abstract` en su grafo
+por defecto (solo `dbo:description`, que son 3-5 palabras). La versión española
+sí sirve el abstract completo y tiene CORS habilitado.
 
 ```
 Endpoint: https://es.dbpedia.org/sparql
 Método:   GET
-Params:   query=<SPARQL url-encoded>, format=json
+Params:   query=<SPARQL url-encoded>&format=json
 Headers:  Accept: application/sparql-results+json
+Timeout:  8 segundos (AbortController)
 ```
 
 ## Función `queryDBpedia`
 
+Envía SPARQL y devuelve filas de binding como `Record<string, string>[]`.
+No hay objeto intermedio — cada fila es directamente el resultado de la variable
+SPARQL con su valor en cadena:
+
 ```typescript
-export async function queryDBpedia(sparql: string): Promise<SparqlBinding[]> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000); // timeout 8s
-  try {
-    const url = `${ENDPOINT}?query=${encodeURIComponent(sparql)}&format=json`;
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: { Accept: 'application/sparql-results+json' },
-    });
-    clearTimeout(timer);
-    if (!res.ok) return [];
-    const rawText = await res.text();
-    const json = JSON.parse(rawText);
-    return json?.results?.bindings ?? [];
-  } catch {
-    clearTimeout(timer);
-    return []; // degradación elegante: nunca rompe la app
-  }
+export async function queryDBpedia(sparql: string): Promise<Record<string, string>[]> {
+  // ... fetch con timeout y AbortController ...
+  const bindings = data?.results?.bindings ?? []
+  return bindings.map(row =>
+    Object.fromEntries(Object.entries(row).map(([k, v]) => [k, v.value]))
+  )
 }
 ```
 
-**Decisiones de diseño:**
-- `AbortController` con timeout de 8 s evita que la UI quede colgada si DBpedia
-  no responde.
-- El `catch` captura cualquier error (red, timeout, JSON malformado) y retorna `[]`.
-  Esto garantiza que el enriquecimiento sea siempre opcional y nunca bloquee la UI.
+El `catch` captura cualquier error (red, timeout) y retorna `[]`.
+Esto garantiza que el enriquecimiento sea siempre opcional y nunca bloquee la UI.
 
-## Formato de respuesta SPARQL JSON
+## Queries SPARQL
 
-DBpedia retorna el estándar W3C SPARQL 1.1 JSON:
-
-```json
-{
-  "results": {
-    "bindings": [
-      {
-        "abstract":  { "type": "literal", "xml:lang": "es", "value": "El pug es..." },
-        "thumbnail": { "type": "uri",     "value": "http://commons.wikimedia.org/..." },
-        "page":      { "type": "uri",     "value": "http://en.wikipedia.org/wiki/Pug" }
-      }
-    ]
-  }
-}
-```
-
-La propiedad de idioma es `"xml:lang"` (con dos puntos en la clave), accesible en
-JavaScript como `binding.abstract?.['xml:lang']`.
-
-## Query con URI directo (estrategia final)
-
-Usar `FILTER + contains(lcase(?label), ...)` resultó ineficiente en DBpedia
-(timeouts o resultados vacíos por falta de índices de texto).
-
-La estrategia adoptada usa el **URI directo** del recurso, que es O(1):
+### Para animales (`buildAnimalQuery`)
 
 ```sparql
 PREFIX dbo:  <http://dbpedia.org/ontology/>
@@ -105,5 +51,37 @@ SELECT ?abstract ?thumbnail ?page WHERE {
 } ORDER BY (lang(?abstract) != 'es') LIMIT 2
 ```
 
-El `ORDER BY (lang(?abstract) != 'es')` coloca el abstract en español primero
-(la expresión booleana devuelve `false=0` para español y `true=1` para inglés).
+Variables devueltas: `abstract`, `thumbnail` (opcional), `page` (opcional).
+
+`ORDER BY (lang(?abstract) != 'es')` coloca el español primero (`false=0 < true=1`).
+
+### Para enfermedades (`buildEnfermedadQuery`)
+
+Igual que el de animales pero sin `?thumbnail`.
+Variables devueltas: `abstract`, `page` (opcional).
+
+## Flujo sin intermediarios
+
+```
+SPARQL query
+     │  fetch GET es.dbpedia.org/sparql
+     ▼
+{ results: { bindings: [ { abstract: { value: "..." }, ... } ] } }
+     │  Object.fromEntries(...)
+     ▼
+Record<string, string>[]   ← resultado directo
+     │
+     ▼
+useDbpediaEnrich → enriched[0].abstract / .thumbnail / .page
+     │
+     ▼
+AnimalDrawer (muestra valores directamente desde el binding row)
+```
+
+No hay tipos intermedios (`DbpediaAnimalInfo`, `SparqlBinding`).
+El componente lee los valores por nombre de variable SPARQL.
+
+## Resolución de slug
+
+Los slugs DBpedia (ej. `"Pug"`, `"Persian_cat"`) se obtienen de `dbpediaMaps.ts`
+en base a la especie/raza del animal. Ver [mapas-uri.md](./mapas-uri.md).

@@ -4,50 +4,65 @@
 
 ## Responsabilidades
 
-1. Cargar los animales de la ontología local via SPARQL (Comunica).
-2. Filtrar por texto libre y por especie.
-3. Mostrar un panel lateral (drawer) al hacer click en una fila, con datos
-   locales + enriquecimiento DBpedia.
+1. Cargar los animales de la ontología local via SPARQL (Comunica) — base para el
+   desplegable de especies y el drawer lateral.
+2. Ejecutar el pipeline de búsqueda inteligente en cada cambio del input.
+3. Renderizar dinámicamente según el tipo de resultado:
+   - Consulta animal → tabla existente + drawer DBpedia.
+   - Consulta relacional o no-animal → `ResultRenderer` dinámico.
 
 ## Estado del componente
 
 | Estado | Tipo | Descripción |
 |--------|------|-------------|
-| `animales` | `Individual[]` | Resultado del SPARQL local, se llena una vez |
-| `queryLoading` | `boolean` | `true` mientras Comunica ejecuta el query |
+| `animales` | `Individual[]` | Todos los animales cargados al inicio (para el select de especie y el drawer) |
+| `queryLoading` | `boolean` | `true` mientras Comunica carga la lista base |
 | `search` | `string` | Texto del input de búsqueda |
-| `especieFilter` | `string` | Valor del select de especie |
+| `especieFilter` | `string` | Valor del select de especie (filtra solo cuando el resultado es Animal) |
 | `selected` | `Individual \| null` | Animal seleccionado (abre el drawer) |
+| `sparqlResults` | `Record<string, string>[] \| null` | Resultados crudos de la última query inteligente |
+| `queryMeta` | `QueryMeta \| null` | Metadatos del query (tipo primario, tipo secundario, isRelacional) |
+| `intelligentLoading` | `boolean` | `true` mientras se ejecuta la query inteligente |
 
-## Carga de datos
+## Pipeline de búsqueda inteligente
 
-```typescript
-useEffect(() => {
-  if (!store) return;
-  setQueryLoading(true);
-  getAnimales(store)
-    .then(result => { setAnimales(result); setQueryLoading(false); })
-    .catch(() => setQueryLoading(false));
-}, [store]);
-```
-
-`store` llega de `useOntology()` y solo está disponible tras el parseo del RDF/XML.
-El efecto se dispara una sola vez cuando `store` pasa de `null` a un valor real.
-
-## Filtrado (memoizado)
+Se dispara en cada cambio del input via `useEffect([search, store])`:
 
 ```typescript
-const filtered = useMemo(() => {
-  return animales.filter(a => {
-    const matchesSearch = !q || [a.props.nombreAnimal, a.props.especie, a.props.raza]
-      .some(v => v?.toLowerCase().includes(q));
-    const matchesEspecie = !especieFilter || a.props.especie === especieFilter;
-    return matchesSearch && matchesEspecie;
-  });
-}, [animales, search, especieFilter]);
+const parsed       = parseQuery(search)          // extrae términos con compromise.js
+const primaryType  = detectEntityType(parsed.primaryTerm)
+const secondaryType = detectEntityType(parsed.secondaryTerm)
+const sparql       = buildQuery({ ...parsed, primaryType, secondaryType })
+const results      = await runQuery(store, sparql)
+setSparqlResults(results)
+setQueryMeta({ isRelational, primaryType, secondaryType, ... })
 ```
 
-Ambos filtros son acumulativos (AND). `useMemo` evita re-filtrar en cada render.
+Ver [search-architecture.md](../search-architecture.md) para el detalle completo.
+
+## Modo de renderizado
+
+```typescript
+const isAnimalTableMode = !queryMeta?.isRelational &&
+  (!queryMeta?.primaryType || queryMeta.primaryType === 'Animal')
+```
+
+| Condición | Renderizado |
+|-----------|------------|
+| `search === ''` | Estado vacío (`vet-empty-state`) |
+| `intelligentLoading` | Spinner SPARQL |
+| `isAnimalTableMode === true` | Tabla de animales + drawer lateral |
+| `isAnimalTableMode === false` | `<ResultRenderer>` dinámico |
+
+Para el modo animal, los resultados SPARQL se cruzan con los `animales` cargados
+al inicio para obtener objetos `Individual` completos (necesarios para el drawer):
+
+```typescript
+const uriSet = new Set(sparqlResults.map(r => r.instance))
+const displayAnimals = animales
+  .filter(a => uriSet.has(a.uri))
+  .filter(a => !especieFilter || a.props.especie === especieFilter)
+```
 
 ## Drawer lateral (`AnimalDrawer`)
 
@@ -58,11 +73,10 @@ Componente interno que se monta cuando `selected !== null`.
 │ Nombre del animal              [×] │
 ├────────────────────────────────────│
 │ DATOS DE LA ONTOLOGÍA              │
-│ Nombre:  Thor                      │
-│ Especie: Canino                    │
-│ Raza:    Pug                       │
-│ Sexo:    Macho  Edad: 3 años       │
-│ Peso:    8.5 kg Color: Arena       │
+│ Nombre:  Thor    Especie: Canino   │
+│ Raza:    Pug     Sexo: Macho       │
+│ Edad:    3 años  Peso: 8.5 kg      │
+│ Color:   Arena   Enfermedad: —     │
 ├────────────────────────────────────│
 │ INFORMACIÓN ADICIONAL [DBpedia]    │
 │ [thumbnail]                        │
@@ -71,11 +85,18 @@ Componente interno que se monta cuando `selected !== null`.
 └────────────────────────────────────┘
 ```
 
-- Los datos locales siempre se muestran.
-- La sección DBpedia solo aparece si `enriched.abstract` existe.
-- Si DBpedia no responde, se muestra "Sin información adicional en DBpedia."
-  en itálica — **nunca un error visible al usuario**.
-- El badge `[DBpedia]` en amarillo indica la fuente de los datos enriquecidos.
+El drawer lee los datos de DBpedia directamente desde el primer binding row
+devuelto por `useDbpediaEnrich`:
+
+```typescript
+const row = enriched[0]   // Record<string, string>
+row.abstract   // texto descriptivo
+row.thumbnail  // URL de imagen
+row.page       // URL de Wikipedia
+```
+
+Si DBpedia no responde o no tiene entrada, se muestra "Sin información adicional."
+sin ningún error visible al usuario.
 
 ## Layout
 
@@ -87,4 +108,3 @@ Componente interno que se monta cuando `selected !== null`.
 ```
 
 Cuando no hay animal seleccionado la tabla ocupa el 100% del ancho.
-El drawer usa `position: sticky; top: 1rem` para mantenerse visible al hacer scroll.

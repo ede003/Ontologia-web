@@ -44,65 +44,67 @@ const { store, loading, error } = useOntology();
 
 ### Propósito
 
-Dado un `Individual` de la ontología local, obtiene de DBpedia su `abstract`,
-`thumbnail` y `wikiPage`. La consulta es **lazy** (solo cuando el drawer se abre)
-y **cacheada** (no repite requests para la misma raza+especie).
+Dado un `Individual` de la ontología local, obtiene de DBpedia los datos de
+enriquecimiento vía SPARQL y los expone como filas de binding crudas.
+La consulta es **lazy** (solo cuando el drawer se abre) y **cacheada** en sesión.
+
+### Interfaz
+
+```typescript
+const { enriched, loading } = useDbpediaEnrich(animal)
+// enriched: Record<string, string>[] | null
+//   Filas de binding SPARQL directas — sin objeto intermedio tipado.
+//   Los nombres de variable coinciden con el SELECT del query DBpedia:
+//     enriched[0].abstract   → descripción en español
+//     enriched[0].thumbnail  → URL de imagen (opcional)
+//     enriched[0].page       → URL de Wikipedia (opcional)
+// loading: boolean
+```
+
+`enriched` es `null` si DBpedia no devuelve resultados, el fetch falla,
+o la raza/especie no tiene slug en `dbpediaMaps.ts`.
 
 ### Caché a nivel de módulo
 
 ```typescript
-const _cache = new Map<string, DbpediaAnimalInfo>();
+const _cache = new Map<string, Record<string, string>[]>()
 // clave: "especie|raza" — e.g. "Canino|Pug"
 ```
 
-La caché persiste durante toda la sesión del browser. Si el mismo par
-especie+raza ya fue consultado, se devuelve el resultado inmediatamente
-sin hacer fetch.
+La caché persiste durante toda la sesión. Si el mismo par ya fue consultado,
+el resultado se devuelve inmediatamente sin hacer fetch.
 
-### Dependencias estables
+### Flujo de datos
 
-```typescript
-const especie = animal?.props.especie ?? '';
-const raza    = animal?.props.raza    ?? '';
-const active  = animal !== null;
-
-useEffect(() => { ... }, [active, especie, raza]);
+```
+Individual (especie, raza)
+     │
+     ▼
+resolveAnimalSlug()  →  slug DBpedia (e.g. "Pug")
+     │
+     ▼
+buildAnimalQuery(slug)  →  SPARQL SELECT ?abstract ?thumbnail ?page
+     │
+     ▼
+queryDBpedia()  →  Record<string, string>[]
+     │
+     ▼
+useDbpediaEnrich  →  enriched[0].abstract / .thumbnail / .page
 ```
 
-Se extraen los valores primitivos del objeto `Individual` para usarlos como
-dependencias del efecto. Esto evita re-disparar el efecto por cambios en la
-referencia del objeto (que ocurren en cada render).
+No hay objetos intermedios como `DbpediaAnimalInfo`; el componente que consume
+el hook lee directamente los valores de binding por nombre de variable.
 
 ### Flag de cancelación
 
 ```typescript
 let cancelled = false;
-
-getAnimalInfo(especie, raza).then(info => {
+getAnimalInfo(especie, raza).then(rows => {
   if (cancelled) return;   // el usuario cambió de animal mientras cargaba
-  _cache.set(key, info);
-  setEnriched(info.abstract ? info : null);
-  setLoading(false);
+  _cache.set(key, rows);
+  setEnriched(rows.length > 0 ? rows : null);
 });
-
-return () => { cancelled = true; };  // cleanup del useEffect
+return () => { cancelled = true; };
 ```
 
-Previene actualizaciones de estado en componentes desmontados (React StrictMode
-desmonta y remonta componentes en desarrollo).
-
-### Interfaz
-
-```typescript
-const { enriched, loading } = useDbpediaEnrich(animal);
-// enriched: DbpediaAnimalInfo | null
-//   { abstract?: string, thumbnail?: string, wikiPage?: string }
-// loading: boolean — true durante el fetch a DBpedia
-```
-
-`enriched` es `null` si:
-- DBpedia no encontró resultados para ese animal.
-- El fetch falló o superó el timeout.
-- La raza/especie no tiene entrada en el mapa de URIs.
-
-En todos esos casos el componente muestra un mensaje discreto sin errores.
+Previene actualizaciones de estado en componentes desmontados.

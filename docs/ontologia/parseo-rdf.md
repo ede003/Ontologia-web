@@ -16,11 +16,29 @@ lanza error pero tampoco parsea correctamente el formato.
 poblar manualmente el n3 `Store`. n3 se usa únicamente como índice de triples
 (no como parser).
 
+## Formato del archivo ontológico
+
+El archivo `Ontologia_Veterinaria_DEPURADA.rdf` usa el patrón `rdf:Description` con
+`rdf:type` como hijo, **no** `owl:NamedIndividual` como nombre de elemento XML:
+
+```xml
+<!-- Formato actual (correcto) -->
+<rdf:Description rdf:about="http://...#Animal_01">
+  <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#NamedIndividual"/>
+  <rdf:type rdf:resource="http://...#Animal"/>
+  <vet:nombreAnimal>Thor</vet:nombreAnimal>
+  <vet:especie>perro</vet:especie>
+</rdf:Description>
+```
+
+Usar `getElementsByTagNameNS(OWL_NS, 'NamedIndividual')` retorna 0 elementos en este
+formato — se necesita filtrar sobre `rdf:Description`.
+
 ## Proceso paso a paso
 
 ### 1. Fetch del archivo
 ```typescript
-const res = await fetch('/ontologia/Ontologia_Veterinaria_DEPURADA.owl');
+const res = await fetch('/ontologia/Ontologia_Veterinaria_DEPURADA.rdf');
 const text = await res.text();
 ```
 
@@ -31,40 +49,45 @@ El archivo está en `public/ontologia/` y Vite lo sirve estáticamente.
 const doc = new DOMParser().parseFromString(text, 'application/xml');
 ```
 
-`DOMParser` es una API estándar disponible en todos los browsers modernos.
-No requiere dependencias externas.
-
 ### 3. Extracción de individuos
 
-Se iteran únicamente los elementos `owl:NamedIndividual` (datos de instancia).
-Las definiciones de clases y propiedades no son necesarias para las consultas.
+Se seleccionan todos los `rdf:Description` (317 en total) y se filtran los que tienen
+un hijo cuyo atributo `rdf:resource` sea la IRI completa de `owl:NamedIndividual`:
 
 ```typescript
-const individuals = doc.getElementsByTagNameNS(
-  'http://www.w3.org/2002/07/owl#',
-  'NamedIndividual'
+const OWL_NAMED_INDIVIDUAL = 'http://www.w3.org/2002/07/owl#NamedIndividual';
+const descriptions = doc.getElementsByTagNameNS(RDF_NS, 'Description');
+const individuals = Array.from(descriptions).filter(desc =>
+  Array.from(desc.children).some(
+    child => child.getAttributeNS(RDF_NS, 'resource') === OWL_NAMED_INDIVIDUAL
+  )
 );
+// → 254 individuos
 ```
 
-### 4. Normalización de namespace `vet:`
+### 4. Construcción de triples
 
-El archivo ontológico tiene una declaración inusual:
-```xml
-xmlns:vet1="vet:"
-```
-
-Esto hace que `DOMParser` expanda los elementos `<vet1:color>` a namespace
-`"vet:"` (un URI relativo, no absoluto). La función `normNs` resuelve esto:
+El archivo usa IRIs absolutas en todos los namespaces (`vet:`, `rdf:`, etc.), por lo que
+no se necesita normalización de namespace. El predicado se construye directamente de
+`namespaceURI + localName`:
 
 ```typescript
-function normNs(ns: string): string {
-  return ns === 'vet:' ? VET_NS : ns;
-  // VET_NS = 'http://www.semanticweb.org/grupo14/ontologias/veterinaria#'
+for (const child of Array.from(ind.children)) {
+  const pred = namedNode(child.namespaceURI + child.localName);
+  const resourceRef = child.getAttributeNS(RDF_NS, 'resource');
+
+  if (resourceRef !== null) {
+    // rdf:resource="..." → NamedNode (normaliza CURIEs vet:X → IRI completa)
+    store.addQuad(subj, pred, namedNode(normalizeIri(resourceRef)));
+  } else {
+    // contenido de texto → Literal
+    store.addQuad(subj, pred, literal(child.textContent ?? ''));
+  }
 }
 ```
 
-También los valores de atributos `rdf:resource="vet:Animal"` deben normalizarse
-porque el parser XML no expande CURIEs en valores de atributos:
+`normalizeIri` solo resuelve CURIEs en valores de atributos (e.g. `rdf:resource="vet:Animal"`),
+donde el parser XML no expande prefijos:
 
 ```typescript
 function normalizeIri(iri: string): string {
@@ -72,39 +95,18 @@ function normalizeIri(iri: string): string {
 }
 ```
 
-### 5. Construcción de triples
-
-Por cada hijo del `NamedIndividual`:
-
-```typescript
-for (const child of Array.from(ind.children)) {
-  const pred = namedNode(normNs(child.namespaceURI) + child.localName);
-  const resourceRef = child.getAttributeNS(RDF_NS, 'resource');
-
-  if (resourceRef !== null) {
-    // Propiedad de objeto → NamedNode
-    store.addQuad(subj, pred, namedNode(normalizeIri(resourceRef)));
-  } else {
-    // Propiedad de dato → Literal
-    store.addQuad(subj, pred, literal(child.textContent ?? ''));
-  }
-}
-```
-
 ## Resultado
 
-El `Store` de n3 contiene todos los triples de instancia normalizados con IRIs
-absolutas. Ejemplo para `Animal_01`:
+El `Store` de n3 carga ~2 436 triples con IRIs absolutas. Ejemplo para `Animal_01`:
 
 | Subject | Predicate | Object |
 |---------|-----------|--------|
+| `vet:#Animal_01` | `rdf:type` | `owl:NamedIndividual` |
 | `vet:#Animal_01` | `rdf:type` | `vet:#Animal` |
 | `vet:#Animal_01` | `vet:#nombreAnimal` | `"Thor"` |
-| `vet:#Animal_01` | `vet:#especie` | `"Canino"` |
+| `vet:#Animal_01` | `vet:#especie` | `"perro"` |
 | `vet:#Animal_01` | `vet:#raza` | `"Pug"` |
-| `vet:#Animal_01` | `vet:#edad` | `"3"` |
 
 ## Singleton
 
 La función es llamada una sola vez gracias al patrón singleton en `useOntology.ts`.
-Ver [hook-enrich.md](../ui/hook-enrich.md) para la lógica de caché.
