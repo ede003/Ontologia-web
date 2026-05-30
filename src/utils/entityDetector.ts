@@ -71,38 +71,41 @@ export const CLASS_SEARCH_PROPS: Record<OntologyClass, string[]> = {
 }
 
 export interface EntityMap {
-  /** lowercase/stemmed term → OntologyClass */
   termToClass: Map<string, OntologyClass>
-  /** lowercase term → exact vet:especie value stored in the ontology */
   speciesValues: Map<string, string>
-  /** lowercase term → exact vet:raza value stored in the ontology */
   razaValues: Map<string, string>
 }
 
 const NS = `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX vet: <http://www.semanticweb.org/grupo14/ontologias/veterinaria#>`
 
-// Registers a raw value (possibly multi-word) and its individual tokens + stems.
+
 function registerValue(map: Map<string, OntologyClass>, raw: string, cls: OntologyClass) {
   const lower = raw.toLowerCase().trim()
   if (!lower) return
-  map.set(lower, cls)
+
+  // Solo registrar si no existe ya 
+  if (!map.has(lower)) map.set(lower, cls)
+
   const fullStem = _stemmer.tokenizeAndStem(lower, false)[0]
-  if (fullStem) map.set(fullStem, cls)
+  if (fullStem && !map.has(fullStem)) map.set(fullStem, cls)
+
   const words = lower.split(/[\s,;]+/).filter(w => w.length > 2)
   for (const word of words) {
     if (word === lower) continue
-    map.set(word, cls)
+    if (!map.has(word)) map.set(word, cls)
     const stem = _stemmer.tokenizeAndStem(word, false)[0]
-    if (stem) map.set(stem, cls)
+    if (stem && !map.has(stem)) map.set(stem, cls)
   }
 }
 
-// Pre-built map with schema-level meta terms only.
 export const META_ENTITY_MAP: EntityMap = (() => {
   const termToClass = new Map<string, OntologyClass>()
   for (const [term, cls] of Object.entries(META_CLASS_MAP)) {
-    registerValue(termToClass, term, cls)
+    // Para el mapa meta sí usamos set directo (no hay riesgo de sobreescritura)
+    termToClass.set(term, cls)
+    const stem = _stemmer.tokenizeAndStem(term, false)[0]
+    if (stem) termToClass.set(stem, cls)
   }
   return { termToClass, speciesValues: new Map(), razaValues: new Map() }
 })()
@@ -127,7 +130,7 @@ SELECT ?val WHERE { ?i rdf:type vet:${cls} . ?i ${prop} ?val . }`
     })
   )
 
-  // ── Especies: singular, plural y stem ────────────────────────────────────
+  // ── Especies: singular, plural 
   const speciesRows = await runQuery(
     store,
     `${NS}
@@ -141,22 +144,22 @@ SELECT DISTINCT ?especie WHERE { ?a rdf:type vet:Animal . ?a vet:especie ?especi
 
     // Singular
     speciesValues.set(lower, row.especie)
-    termToClass.set(lower, 'Animal')
+    if (!termToClass.has(lower)) termToClass.set(lower, 'Animal')
 
     // Plural simple: gato → gatos, perro → perros
     const plural = lower.endsWith('s') ? lower : lower + 's'
     speciesValues.set(plural, row.especie)
-    termToClass.set(plural, 'Animal')
+    if (!termToClass.has(plural)) termToClass.set(plural, 'Animal')
 
     // Stem
     const stems = _stemmer.tokenizeAndStem(lower, false)
     if (stems[0]) {
-      termToClass.set(stems[0], 'Animal')
+      if (!termToClass.has(stems[0])) termToClass.set(stems[0], 'Animal')
       if (!speciesValues.has(stems[0])) speciesValues.set(stems[0], row.especie)
     }
   }
 
-  // ── Razas: frase completa, palabras individuales, plural y stem ──────────
+  // ── Razas
   const razaRows = await runQuery(
     store,
     `${NS}
@@ -170,22 +173,22 @@ SELECT DISTINCT ?raza WHERE { ?a rdf:type vet:Animal . ?a vet:raza ?raza . }`,
 
     // Frase completa: "golden retriever", "maine coon"
     razaValues.set(lower, row.raza)
-    termToClass.set(lower, 'Animal')
+    if (!termToClass.has(lower)) termToClass.set(lower, 'Animal')
 
     // Plural de la frase completa
     const plural = lower.endsWith('s') ? lower : lower + 's'
     razaValues.set(plural, row.raza)
-    termToClass.set(plural, 'Animal')
+    if (!termToClass.has(plural)) termToClass.set(plural, 'Animal')
 
     // Palabras individuales: "golden", "retriever", "maine", "coon"
     const words = lower.split(/\s+/).filter(w => w.length > 2)
     for (const word of words) {
       if (word === lower) continue
       razaValues.set(word, row.raza)
-      termToClass.set(word, 'Animal')
+      if (!termToClass.has(word)) termToClass.set(word, 'Animal')
       const stem = _stemmer.tokenizeAndStem(word, false)[0]
       if (stem) {
-        termToClass.set(stem, 'Animal')
+        if (!termToClass.has(stem)) termToClass.set(stem, 'Animal')
         if (!razaValues.has(stem)) razaValues.set(stem, row.raza)
       }
     }
@@ -193,7 +196,7 @@ SELECT DISTINCT ?raza WHERE { ?a rdf:type vet:Animal . ?a vet:raza ?raza . }`,
     // Stem de la frase completa
     const fullStem = _stemmer.tokenizeAndStem(lower, false)[0]
     if (fullStem) {
-      termToClass.set(fullStem, 'Animal')
+      if (!termToClass.has(fullStem)) termToClass.set(fullStem, 'Animal')
       if (!razaValues.has(fullStem)) razaValues.set(fullStem, row.raza)
     }
   }
