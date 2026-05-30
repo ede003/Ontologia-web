@@ -36,7 +36,6 @@ export const GENERIC_CLASS_TERMS = new Set([
 ])
 
 // Schema-level meta terms: describe ontology classes, not data instances.
-// These never change when the ontology data changes.
 const META_CLASS_MAP: Record<string, OntologyClass> = {
   animal: 'Animal', animales: 'Animal', mascota: 'Animal', mascotas: 'Animal',
   enfermedad: 'Enfermedad', enfermedades: 'Enfermedad',
@@ -58,10 +57,9 @@ const META_CLASS_MAP: Record<string, OntologyClass> = {
 }
 
 // All text properties to query per class when building the dynamic entity map.
-// Also drives the multi-property FILTER in sparqlBuilder (via getNonLabelSearchProps).
 export const CLASS_SEARCH_PROPS: Record<OntologyClass, string[]> = {
   Animal:       ['vet:nombreAnimal', 'vet:raza'],
-  Enfermedad:   ['vet:nombreEnfermedad', 'vet:tipoEnfermedad', 'vet:nivelGravedad', 'vet:sintomas'],
+  Enfermedad:   ['vet:nombreEnfermedad', 'vet:tipoEnfermedad', 'vet:nivelGravedad', 'vet:sintomas', 'vet:descripcionEnfermedad'],
   Medicamento:  ['vet:nombreMedicamento', 'vet:tipoMedicamento', 'vet:viaAdministracion'],
   Veterinario:  ['vet:nombre', 'vet:especialidad'],
   Consulta:     ['vet:descripcionServicio', 'vet:diagnosticoInicial', 'vet:sintomasReportados'],
@@ -73,25 +71,24 @@ export const CLASS_SEARCH_PROPS: Record<OntologyClass, string[]> = {
 }
 
 export interface EntityMap {
-  /** lowercase/stemmed term → OntologyClass, populated from ontology data + meta terms */
+  /** lowercase/stemmed term → OntologyClass */
   termToClass: Map<string, OntologyClass>
   /** lowercase term → exact vet:especie value stored in the ontology */
   speciesValues: Map<string, string>
+  /** lowercase term → exact vet:raza value stored in the ontology */
+  razaValues: Map<string, string>
 }
 
 const NS = `PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX vet: <http://www.semanticweb.org/grupo14/ontologias/veterinaria#>`
 
 // Registers a raw value (possibly multi-word) and its individual tokens + stems.
-// Multi-word values like "Fiebre, tos, dificultad para respirar" contribute each word.
 function registerValue(map: Map<string, OntologyClass>, raw: string, cls: OntologyClass) {
   const lower = raw.toLowerCase().trim()
   if (!lower) return
-  // Register the full value
   map.set(lower, cls)
   const fullStem = _stemmer.tokenizeAndStem(lower, false)[0]
   if (fullStem) map.set(fullStem, cls)
-  // Register individual words (handles comma/space-separated symptom lists, etc.)
   const words = lower.split(/[\s,;]+/).filter(w => w.length > 2)
   for (const word of words) {
     if (word === lower) continue
@@ -102,18 +99,18 @@ function registerValue(map: Map<string, OntologyClass>, raw: string, cls: Ontolo
 }
 
 // Pre-built map with schema-level meta terms only.
-// Available immediately without waiting for the store to load.
 export const META_ENTITY_MAP: EntityMap = (() => {
   const termToClass = new Map<string, OntologyClass>()
   for (const [term, cls] of Object.entries(META_CLASS_MAP)) {
     registerValue(termToClass, term, cls)
   }
-  return { termToClass, speciesValues: new Map() }
+  return { termToClass, speciesValues: new Map(), razaValues: new Map() }
 })()
 
 export async function buildEntityMap(store: Store): Promise<EntityMap> {
-  const termToClass = new Map(META_ENTITY_MAP.termToClass)
+  const termToClass   = new Map(META_ENTITY_MAP.termToClass)
   const speciesValues = new Map<string, string>()
+  const razaValues    = new Map<string, string>()
 
   // Query all text property values for every class in parallel
   const allPropQueries = (Object.entries(CLASS_SEARCH_PROPS) as Array<[OntologyClass, string[]]>)
@@ -130,18 +127,28 @@ SELECT ?val WHERE { ?i rdf:type vet:${cls} . ?i ${prop} ?val . }`
     })
   )
 
-  // Load species values separately — stored as exact ontology values for precise FILTER matching
+  // ── Especies: singular, plural y stem ────────────────────────────────────
   const speciesRows = await runQuery(
     store,
     `${NS}
 SELECT DISTINCT ?especie WHERE { ?a rdf:type vet:Animal . ?a vet:especie ?especie . }`,
     { silent: true },
   )
+
   for (const row of speciesRows) {
     if (!row.especie) continue
     const lower = row.especie.toLowerCase()
+
+    // Singular
     speciesValues.set(lower, row.especie)
     termToClass.set(lower, 'Animal')
+
+    // Plural simple: gato → gatos, perro → perros
+    const plural = lower.endsWith('s') ? lower : lower + 's'
+    speciesValues.set(plural, row.especie)
+    termToClass.set(plural, 'Animal')
+
+    // Stem
     const stems = _stemmer.tokenizeAndStem(lower, false)
     if (stems[0]) {
       termToClass.set(stems[0], 'Animal')
@@ -149,7 +156,49 @@ SELECT DISTINCT ?especie WHERE { ?a rdf:type vet:Animal . ?a vet:especie ?especi
     }
   }
 
-  return { termToClass, speciesValues }
+  // ── Razas: frase completa, palabras individuales, plural y stem ──────────
+  const razaRows = await runQuery(
+    store,
+    `${NS}
+SELECT DISTINCT ?raza WHERE { ?a rdf:type vet:Animal . ?a vet:raza ?raza . }`,
+    { silent: true },
+  )
+
+  for (const row of razaRows) {
+    if (!row.raza) continue
+    const lower = row.raza.toLowerCase()
+
+    // Frase completa: "golden retriever", "maine coon"
+    razaValues.set(lower, row.raza)
+    termToClass.set(lower, 'Animal')
+
+    // Plural de la frase completa
+    const plural = lower.endsWith('s') ? lower : lower + 's'
+    razaValues.set(plural, row.raza)
+    termToClass.set(plural, 'Animal')
+
+    // Palabras individuales: "golden", "retriever", "maine", "coon"
+    const words = lower.split(/\s+/).filter(w => w.length > 2)
+    for (const word of words) {
+      if (word === lower) continue
+      razaValues.set(word, row.raza)
+      termToClass.set(word, 'Animal')
+      const stem = _stemmer.tokenizeAndStem(word, false)[0]
+      if (stem) {
+        termToClass.set(stem, 'Animal')
+        if (!razaValues.has(stem)) razaValues.set(stem, row.raza)
+      }
+    }
+
+    // Stem de la frase completa
+    const fullStem = _stemmer.tokenizeAndStem(lower, false)[0]
+    if (fullStem) {
+      termToClass.set(fullStem, 'Animal')
+      if (!razaValues.has(fullStem)) razaValues.set(fullStem, row.raza)
+    }
+  }
+
+  return { termToClass, speciesValues, razaValues }
 }
 
 export function detectEntityType(term: string, map: EntityMap): OntologyClass | null {
@@ -167,4 +216,9 @@ export function isGenericTerm(term: string): boolean {
 export function resolveSpeciesValue(term: string, map: EntityMap): string | null {
   const lower = term.toLowerCase().trim()
   return map.speciesValues.get(lower) ?? null
+}
+
+export function resolveRazaValue(term: string, map: EntityMap): string | null {
+  const lower = term.toLowerCase().trim()
+  return map.razaValues.get(lower) ?? null
 }

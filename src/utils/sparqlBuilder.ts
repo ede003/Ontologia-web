@@ -71,7 +71,8 @@ const CLASS_EXTRA: Record<OntologyClass, string> = {
   Enfermedad: `
   OPTIONAL { ?instance vet:tipoEnfermedad ?tipoEnfermedad }
   OPTIONAL { ?instance vet:nivelGravedad ?nivelGravedad }
-  OPTIONAL { ?instance vet:sintomas ?sintomas }`,
+  OPTIONAL { ?instance vet:sintomas ?sintomas }
+  OPTIONAL { ?instance vet:descripcionEnfermedad ?descripcionEnfermedad }`,
   Medicamento: `
   OPTIONAL { ?instance vet:tipoMedicamento ?tipoMedicamento }
   OPTIONAL { ?instance vet:dosisMedicamento ?dosisMedicamento }
@@ -106,10 +107,10 @@ export interface QueryParams {
   secondaryType: OntologyClass | null
   rawInput: string
   entityMap: EntityMap
+  filters?: Record<string, string>
 }
 
 // Returns non-label property local names (variable names) that are searchable for a class.
-// Example: Enfermedad → ['tipoEnfermedad', 'nivelGravedad', 'sintomas']
 function getNonLabelVars(cls: OntologyClass): string[] {
   const labelProp = CLASS_LABEL[cls]
   return CLASS_SEARCH_PROPS[cls]
@@ -118,7 +119,6 @@ function getNonLabelVars(cls: OntologyClass): string[] {
 }
 
 // Builds a multi-property FILTER clause (label + all extra searchable fields).
-// Uses BOUND checks to handle unbound OPTIONAL variables safely.
 function buildTextFilter(term: string, labelVar: string, extraVars: string[]): string {
   const t = term.toLowerCase()
   const conditions = [
@@ -128,8 +128,21 @@ function buildTextFilter(term: string, labelVar: string, extraVars: string[]): s
   return `FILTER(\n  ${conditions.join('\n  || ')}\n)`
 }
 
-// For relational queries: builds extra OPTIONALs and a FILTER for one side (subject/object).
-// prefixedVarSuffix distinguishes vars between subject and object sides.
+// Builds FILTER clauses for attribute filters (edad, sexo, raza, especie)
+function buildAttrFilters(filters: Record<string, string>): string {
+  return Object.entries(filters)
+    .map(([key, val]) => {
+      if (key === 'edad')    return `FILTER(str(?edad) = "${val}")`
+      if (key === 'sexo')    return `FILTER(LCASE(?sexo) = "${val.toLowerCase()}")`
+      if (key === 'raza')    return `FILTER(CONTAINS(LCASE(?raza), "${val.toLowerCase()}"))`
+      if (key === 'especie') return `FILTER(LCASE(?especie) = "${val.toLowerCase()}")`
+      return ''
+    })
+    .filter(Boolean)
+    .join('\n  ')
+}
+
+// For relational queries: builds extra OPTIONALs and a FILTER for one side.
 function buildRelationalSideFilter(
   side: 'subject' | 'object',
   cls: OntologyClass,
@@ -156,7 +169,6 @@ function buildRelationalSideFilter(
     }
   }
 
-  // Add OPTIONALs with side-prefixed variable names to avoid conflicts in the same query
   const sideOptionals = extraVars
     .map(v => `OPTIONAL { ?${side} vet:${v} ?${side}_${v} }`)
     .join('\n  ')
@@ -172,7 +184,21 @@ function buildRelationalSideFilter(
 }
 
 export function buildQuery(params: QueryParams): string {
-  const { isRelational, primaryType, secondaryType, primaryTerm, secondaryTerm, rawInput, entityMap } = params
+  const {
+    isRelational,
+    primaryType,
+    secondaryType,
+    primaryTerm,
+    secondaryTerm,
+    rawInput,
+    entityMap,
+    filters = {},
+  } = params
+
+  // Si hay filtros de especie/raza → siempre modo Animal
+  if (filters.especie || filters.raza) {
+    return buildSingleClassQuery('Animal', primaryTerm, entityMap, filters)
+  }
 
   if (isRelational && primaryType && secondaryType) {
     const joinPattern = JOIN_PATTERN[primaryType]?.[secondaryType]
@@ -182,7 +208,7 @@ export function buildQuery(params: QueryParams): string {
   }
 
   if (primaryType) {
-    return buildSingleClassQuery(primaryType, primaryTerm, entityMap)
+    return buildSingleClassQuery(primaryType, primaryTerm, entityMap, filters)
   }
 
   return buildFallbackQuery(rawInput)
@@ -218,19 +244,29 @@ SELECT ?subject ?subjectName ?object ?objectName WHERE {
 }`
 }
 
-function buildSingleClassQuery(classType: OntologyClass, term: string, entityMap: EntityMap): string {
+function buildSingleClassQuery(
+  classType: OntologyClass,
+  term: string,
+  entityMap: EntityMap,
+  filters: Record<string, string> = {},
+): string {
   const labelProp   = CLASS_LABEL[classType]
   const extraFields = CLASS_EXTRA[classType] ?? ''
   const extraVars   = getNonLabelVars(classType)
 
-  const speciesValue = classType === 'Animal' ? resolveSpeciesValue(term, entityMap) : null
+  // Si ya hay filtro de especie en filters, no duplicar con speciesValue
+  const speciesValue = (!filters.especie && classType === 'Animal')
+    ? resolveSpeciesValue(term, entityMap)
+    : null
 
   let filter = ''
   if (speciesValue) {
     filter = `FILTER(LCASE(?especie) = "${speciesValue.toLowerCase()}")`
-  } else if (!isGenericTerm(term)) {
+  } else if (!isGenericTerm(term) && !filters.especie && !filters.raza) {
     filter = buildTextFilter(term, 'name', extraVars)
   }
+
+  const attrFilters = buildAttrFilters(filters)
 
   return `${PREFIXES}
 SELECT * WHERE {
@@ -238,6 +274,7 @@ SELECT * WHERE {
   OPTIONAL { ?instance ${labelProp} ?name }
   ${extraFields}
   ${filter}
+  ${attrFilters}
 }`
 }
 

@@ -154,12 +154,12 @@ export function AnimalesPage() {
     }
 
     setIntelligentLoading(true);
-    const parsed       = parseQuery(search);
+    const parsed       = parseQuery(search, entityMap);
     const primaryType  = detectEntityType(parsed.primaryTerm, entityMap);
     const secondaryType = parsed.secondaryTerm
       ? detectEntityType(parsed.secondaryTerm, entityMap)
       : null;
-    const sparql = buildQuery({ ...parsed, primaryType, secondaryType, entityMap });
+    const sparql = buildQuery({ ...parsed, primaryType, secondaryType, entityMap, filters: parsed.filters })
 
     console.group(`[AnimalesPage] Búsqueda: "${search}"`)
     console.log('parseQuery →', { terms: parsed.terms, primaryTerm: parsed.primaryTerm, secondaryTerm: parsed.secondaryTerm, isRelational: parsed.isRelational })
