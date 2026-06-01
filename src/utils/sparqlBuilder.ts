@@ -150,6 +150,36 @@ function buildAttrFilters(filters: Record<string, string>): string {
     .join('\n  ')
 }
 
+// Para el lado Animal en queries relacionales cuando los filtros vienen de filters{}
+function buildAnimalAttrSideFilter(
+  filters: Record<string, string>,
+): { optionals: string; filter: string } {
+  const optionals: string[] = []
+  const conditions: string[] = []
+
+  if (filters.especie) {
+    optionals.push('OPTIONAL { ?subject vet:especie ?subjectEspecie }')
+    conditions.push(`LCASE(?subjectEspecie) = "${filters.especie.toLowerCase()}"`)
+  }
+  if (filters.raza) {
+    optionals.push('OPTIONAL { ?subject vet:raza ?subjectRaza }')
+    conditions.push(`CONTAINS(LCASE(?subjectRaza), "${filters.raza.toLowerCase()}")`)
+  }
+  if (filters.sexo) {
+    optionals.push('OPTIONAL { ?subject vet:sexo ?subjectSexo }')
+    conditions.push(`LCASE(?subjectSexo) = "${filters.sexo.toLowerCase()}"`)
+  }
+  if (filters.edad) {
+    optionals.push('OPTIONAL { ?subject vet:edad ?subjectEdad }')
+    conditions.push(`str(?subjectEdad) = "${filters.edad}"`)
+  }
+
+  return {
+    optionals: optionals.join('\n  '),
+    filter: conditions.length > 0 ? `FILTER(${conditions.join(' && ')})` : '',
+  }
+}
+
 // For relational queries: builds extra OPTIONALs and a FILTER for one side.
 function buildRelationalSideFilter(
   side: 'subject' | 'object',
@@ -203,16 +233,21 @@ export function buildQuery(params: QueryParams): string {
     filters = {},
   } = params
 
-  // Si hay filtros de especie/raza → siempre modo Animal
-  if (filters.especie || filters.raza) {
-    return buildSingleClassQuery('Animal', primaryTerm, entityMap, filters)
-  }
-
+  // FIX: el modo relacional tiene prioridad sobre todo, incluso si hay filtros de especie/raza
+  // Ej: "perro con otitis" → isRelational=true, primaryType=Animal, secondaryType=Enfermedad
   if (isRelational && primaryType && secondaryType) {
     const joinPattern = JOIN_PATTERN[primaryType]?.[secondaryType]
     if (joinPattern) {
-      return buildRelationalQuery(primaryType, secondaryType, joinPattern, primaryTerm, secondaryTerm ?? '', entityMap)
+      return buildRelationalQuery(
+        primaryType, secondaryType, joinPattern,
+        primaryTerm, secondaryTerm ?? '', entityMap, filters,
+      )
     }
+  }
+
+  // Solo llega aquí si NO es relacional
+  if (filters.especie || filters.raza) {
+    return buildSingleClassQuery('Animal', primaryTerm, entityMap, filters)
   }
 
   if (primaryType) {
@@ -229,12 +264,18 @@ function buildRelationalQuery(
   primaryTerm: string,
   secondaryTerm: string,
   entityMap: EntityMap,
+  filters: Record<string, string> = {},
 ): string {
   const subjectLabel = CLASS_LABEL[primaryType]
   const objectLabel  = CLASS_LABEL[secondaryType]
 
+  // FIX: si el lado primary es Animal y hay filtros de atributo (especie, raza, sexo, edad),
+  // usar buildAnimalAttrSideFilter en vez de buildRelationalSideFilter (que buscaría por texto)
   const { optionals: primaryOptionals, filter: primaryFilter } =
-    buildRelationalSideFilter('subject', primaryType, primaryTerm, entityMap)
+    primaryType === 'Animal' && (filters.especie || filters.raza || filters.sexo || filters.edad)
+      ? buildAnimalAttrSideFilter(filters)
+      : buildRelationalSideFilter('subject', primaryType, primaryTerm, entityMap)
+
   const { optionals: secondaryOptionals, filter: secondaryFilter } =
     buildRelationalSideFilter('object', secondaryType, secondaryTerm, entityMap)
 

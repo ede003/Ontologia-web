@@ -25,16 +25,16 @@ function AnimalDrawer({ animal, onClose }: DrawerProps) {
   const p = animal.props;
 
   const fields: [string, string][] = [
-    ['Nombre',       p.nombreAnimal  ?? '—'],
-    ['Especie',      p.especie       ?? '—'],
-    ['Raza',         p.raza          ?? '—'],
-    ['Sexo',         p.sexo          ?? '—'],
-    ['Edad',         p.edad   ? `${p.edad} años` : '—'],
-    ['Peso',         p.peso   ? `${p.peso} kg`   : '—'],
-    ['Color',        p.color         ?? '—'],
-    ['Enfermedad',   p.enfermedades  ?? '—'],
-    ['Dueño',        p.dueno         ?? '—'],
-    ['Veterinario',  p.veterinario   ?? '—'],
+    ['Nombre',      p.nombreAnimal  ?? '—'],
+    ['Especie',     p.especie       ?? '—'],
+    ['Raza',        p.raza          ?? '—'],
+    ['Sexo',        p.sexo          ?? '—'],
+    ['Edad',        p.edad   ? `${p.edad} años` : '—'],
+    ['Peso',        p.peso   ? `${p.peso} kg`   : '—'],
+    ['Color',       p.color         ?? '—'],
+    ['Enfermedad',  p.enfermedades  ?? '—'],
+    ['Dueño',       p.dueno         ?? '—'],
+    ['Veterinario', p.veterinario   ?? '—'],
   ];
 
   return (
@@ -115,9 +115,11 @@ interface AnimalTableProps {
   selected: Individual | null;
   onSelect: (a: Individual | null) => void;
   footer?: string;
+  // Permite sobreescribir la enfermedad mostrada por URI (resultado relacional)
+  enfermedadOverride?: Map<string, string>;
 }
 
-function AnimalTable({ animales, selected, onSelect, footer }: AnimalTableProps) {
+function AnimalTable({ animales, selected, onSelect, footer, enfermedadOverride }: AnimalTableProps) {
   return (
     <div className="vet-table-wrap">
       <table className="vet-table">
@@ -131,6 +133,8 @@ function AnimalTable({ animales, selected, onSelect, footer }: AnimalTableProps)
         <tbody>
           {animales.map(a => {
             const isSelected = selected?.uri === a.uri;
+            // Si hay override de enfermedad (búsqueda relacional), usarla
+            const enfermedad = enfermedadOverride?.get(a.uri) ?? a.props.enfermedades ?? '—';
             return (
               <tr
                 key={a.uri}
@@ -143,12 +147,12 @@ function AnimalTable({ animales, selected, onSelect, footer }: AnimalTableProps)
                     ? <span className="vet-pill">{a.props.especie}</span>
                     : '—'}
                 </td>
-                <td>{a.props.raza         ?? '—'}</td>
-                <td>{a.props.sexo         ?? '—'}</td>
-                <td>{a.props.edad         ?? '—'}</td>
-                <td>{a.props.enfermedades ?? '—'}</td>
-                <td>{a.props.dueno        ?? '—'}</td>
-                <td>{a.props.veterinario  ?? '—'}</td>
+                <td>{a.props.raza        ?? '—'}</td>
+                <td>{a.props.sexo        ?? '—'}</td>
+                <td>{a.props.edad        ?? '—'}</td>
+                <td>{enfermedad}</td>
+                <td>{a.props.dueno       ?? '—'}</td>
+                <td>{a.props.veterinario ?? '—'}</td>
               </tr>
             );
           })}
@@ -214,7 +218,7 @@ export function AnimalesPage() {
 
     runQuery(store, sparql)
       .then(results => {
-        console.log(`runQuery → ${results.length} resultados`)
+        console.log(`runQuery → ${results.length} resultados`, results)
         console.groupEnd()
         setSparqlResults(results);
 
@@ -242,8 +246,14 @@ export function AnimalesPage() {
   }, [search, store, entityMap]);
 
   // Modo tabla de animales: no relacional y primaryType es Animal (o null)
+  // También aplica cuando es relacional Animal↔Enfermedad (para mostrar tabla con filtro)
   const isAnimalTableMode = !queryMeta?.isRelational &&
     (!queryMeta?.primaryType || queryMeta.primaryType === 'Animal');
+
+  // Modo relacional donde el sujeto es Animal (ej: "perro con otitis")
+  const isAnimalRelationalMode =
+    queryMeta?.isRelational &&
+    queryMeta?.primaryType === 'Animal';
 
   // Especies únicas para el dropdown
   const especies = useMemo<string[]>(() => {
@@ -258,13 +268,39 @@ export function AnimalesPage() {
     return animales.filter(a => a.props.especie === especieFilter);
   }, [animales, especieFilter]);
 
-  // Animales desde SPARQL + filtro dropdown combinados
+  // Animales desde SPARQL modo normal (instance) + filtro dropdown
   const displayAnimals = useMemo<Individual[]>(() => {
     if (!isAnimalTableMode || !sparqlResults) return [];
     const uriSet = new Set(sparqlResults.map(r => r.instance).filter(Boolean));
     const matched = animales.filter(a => uriSet.has(a.uri));
     return matched.filter(a => !especieFilter || a.props.especie === especieFilter);
   }, [isAnimalTableMode, sparqlResults, animales, especieFilter]);
+
+  // Animales desde SPARQL modo relacional Animal↔X (?subject = animal URI)
+  // Construye también un mapa URI → nombre del objeto (enfermedad, veterinario, etc.)
+  const { relationalAnimals, enfermedadOverride } = useMemo<{
+    relationalAnimals: Individual[];
+    enfermedadOverride: Map<string, string>;
+  }>(() => {
+    if (!isAnimalRelationalMode || !sparqlResults) {
+      return { relationalAnimals: [], enfermedadOverride: new Map() };
+    }
+
+    // subject = URI del animal, objectName = nombre de la entidad relacionada
+    const uriSet = new Set(sparqlResults.map(r => r.subject).filter(Boolean));
+    const matched = animales.filter(a => uriSet.has(a.uri));
+    const filtered = matched.filter(a => !especieFilter || a.props.especie === especieFilter);
+
+    // Mapa URI animal → nombre del objeto (enfermedad buscada)
+    const override = new Map<string, string>();
+    for (const r of sparqlResults) {
+      if (r.subject && r.objectName) {
+        override.set(r.subject, r.objectName);
+      }
+    }
+
+    return { relationalAnimals: filtered, enfermedadOverride: override };
+  }, [isAnimalRelationalMode, sparqlResults, animales, especieFilter]);
 
   if (ontologyLoading || queryLoading) {
     return (
@@ -352,8 +388,23 @@ export function AnimalesPage() {
             Ejecutando consulta SPARQL…
           </div>
 
+        ) : isAnimalRelationalMode ? (
+          /* Búsqueda relacional Animal↔X → tabla con enfermedad filtrada */
+          <div className="vet-layout">
+            <AnimalTable
+              animales={relationalAnimals}
+              selected={selected}
+              onSelect={setSelected}
+              enfermedadOverride={enfermedadOverride}
+              footer={`${relationalAnimals.length} de ${animales.length} animales${especieFilter ? ` · ${especieFilter}` : ''}${selected ? ' · Haz clic en la misma fila para cerrar el panel' : ' · Haz clic en una fila para ver detalles'}`}
+            />
+            {selected && (
+              <AnimalDrawer animal={selected} onClose={() => setSelected(null)} />
+            )}
+          </div>
+
         ) : isAnimalTableMode ? (
-          /* Búsqueda de animales → tabla + drawer */
+          /* Búsqueda simple de animales → tabla + drawer */
           <div className="vet-layout">
             <AnimalTable
               animales={displayAnimals}
@@ -367,7 +418,7 @@ export function AnimalesPage() {
           </div>
 
         ) : sparqlResults !== null && queryMeta !== null ? (
-          /* Relacional o no-animal → ResultRenderer */
+          /* Relacional no-animal o clase genérica → ResultRenderer */
           <ResultRenderer results={sparqlResults} queryMeta={queryMeta} />
 
         ) : null}

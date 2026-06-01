@@ -117,7 +117,7 @@ export function parseQuery(rawInput: string, entityMap?: EntityMap): ParsedQuery
   const stemmed = stemmer.tokenizeAndStem(lower, false)
   const filters: Record<string, string> = {}
 
-  // ── Paso 1: extraer edad y sexo (incluyendo plurales) ────────────────────
+  // ── Paso 1: extraer edad y sexo ──────────────────────────────────────────
   let workingTokens = [...allTokens]
 
   const { age, remaining: afterAge } = extractAge(workingTokens)
@@ -138,22 +138,32 @@ export function parseQuery(rawInput: string, entityMap?: EntityMap): ParsedQuery
     if (especie) { filters.especie = especie; cleanTerms = afterEspecie }
   }
 
-  // ── Paso 3: si hay filtros de Animal → modo Animal directo ───────────────
+  // ── Paso 3: si hay filtros de Animal ────────────────────────────────────
   if (filters.especie || filters.raza || filters.sexo || filters.edad) {
-    // Si quedan términos limpios pueden ser una segunda entidad (relacional)
-    // pero si no quedan, es una búsqueda pura de Animal con atributos
+    // Sin términos restantes → búsqueda pura de Animal con atributos
     if (cleanTerms.length === 0) {
       return {
         terms, stemmed,
         isRelational: false,
-        primaryTerm: 'animales',  // término genérico → no genera FILTER de texto
+        primaryTerm: 'animales',
         secondaryTerm: null,
         rawInput,
         filters,
       }
     }
-    // Quedan términos → puede ser relacional (ej: "gatos con rabia")
-    // se continúa al paso 4
+
+    // FIX: quedan términos → es relacional (ej: "perro con otitis", "gato con rabia")
+    // primaryTerm = 'animales' (genérico, la especie/raza viajan en filters)
+    // secondaryTerm = el término que quedó (ej: "otitis")
+    const secondaryTerm = cleanTerms[0]
+    return {
+      terms, stemmed,
+      isRelational: true,
+      primaryTerm: 'animales',
+      secondaryTerm,
+      rawInput,
+      filters,
+    }
   }
 
   // ── Paso 4: detectar instancia compuesta no-Animal ───────────────────────
