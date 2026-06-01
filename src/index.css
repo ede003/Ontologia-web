@@ -491,3 +491,17 @@ body {
   font-size: 0.95rem;
   font-style: italic;
 }
+/* ── Language Selector ─────────────────────────── */
+.vet-lang-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  padding-right: 1rem;
+}
+
+.vet-lang-selector__label {
+  font-size: 0.85rem;
+  color: var(--color-muted, #888);
+  white-space: nowrap;
+}

@@ -20,7 +20,7 @@ export interface Translations {
   loadingSparql: string;
   errorPrefix: string;
 
-  // ── Tabla de animales ───────────────────────────────────
+  // ── Tabla de animales ────────────────────────────────────
   colName: string;
   colSpecies: string;
   colBreed: string;
@@ -48,7 +48,7 @@ export interface Translations {
   drawerFieldSex: string;
   drawerFieldAge: string;
   drawerFieldAgeUnit: string;   // "años" / "years" / "anos"
-  drawerFieldWeight: string; 
+  drawerFieldWeight: string;
   drawerFieldWeightUnit: string; // "kg"
   drawerFieldColor: string;
   drawerFieldDisease: string;
@@ -63,7 +63,7 @@ export interface Translations {
   // ── Selector de idioma ───────────────────────────────────
   languageLabel: string;
 
-n  // ── DBpedia: idioma de consulta ──────────────────────────
+  // ── DBpedia: idioma de consulta ──────────────────────────
   dbpediaLang: string;          // "es" / "en" / "pt"
 }
 
@@ -302,7 +302,7 @@ export const searchTermTranslations: Record<string, string> = {
   vacina: 'vacuna', vacinas: 'vacunas', vacinação: 'vacunacion',
   tratamento: 'tratamiento', tratamentos: 'tratamientos',
   exame: 'examen', exames: 'examenes',
-  cirurgia: 'cirugia', cirurgias: 'cirurgias',
+  cirurgia: 'cirugia', cirurgias: 'cirugias',
   dono: 'dueño', donos: 'dueños', proprietário: 'dueño',
   mascote: 'mascota', mascotes: 'mascotas',
 

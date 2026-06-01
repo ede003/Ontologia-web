@@ -10,7 +10,7 @@ export interface UseDbpediaEnrichResult {
   loading: boolean;
 }
 
-export function useDbpediaEnrich(animal: Individual | null): UseDbpediaEnrichResult {
+export function useDbpediaEnrich(animal: Individual | null, lang = 'es'): UseDbpediaEnrichResult {
   const especie = animal?.props.especie ?? '';
   const raza    = animal?.props.raza    ?? '';
   const active  = animal !== null;
@@ -25,8 +25,8 @@ export function useDbpediaEnrich(animal: Individual | null): UseDbpediaEnrichRes
       return;
     }
 
-    const key = `${especie}|${raza}`;
-    console.log(`[useDbpediaEnrich] animal activo — especie="${especie}" raza="${raza}" cacheKey="${key}"`)
+    const key = `${especie}|${raza}|${lang}`;
+    console.log(`[useDbpediaEnrich] animal activo — especie="${especie}" raza="${raza}" lang="${lang}" cacheKey="${key}"`)
 
     if (_cache.has(key)) {
       const cached = _cache.get(key)!;
@@ -41,16 +41,36 @@ export function useDbpediaEnrich(animal: Individual | null): UseDbpediaEnrichRes
     setLoading(true);
     setEnriched(null);
 
-    getAnimalInfo(especie, raza).then(rows => {
+    getAnimalInfo(especie, raza, lang).then(rows => {
       if (cancelled) return;
       console.log(`[useDbpediaEnrich] getAnimalInfo resolvió: ${rows.length} filas`)
+
+      // Si no hay resultado en el idioma pedido, intenta con español como respaldo
+      if (rows.length === 0 && lang !== 'es') {
+        const fallbackKey = `${especie}|${raza}|es`;
+        if (_cache.has(fallbackKey)) {
+          const fallback = _cache.get(fallbackKey)!;
+          _cache.set(key, fallback);
+          setEnriched(fallback.length > 0 ? fallback : null);
+          setLoading(false);
+          return;
+        }
+        return getAnimalInfo(especie, raza, 'es').then(fallbackRows => {
+          if (cancelled) return;
+          _cache.set(key, fallbackRows);
+          _cache.set(fallbackKey, fallbackRows);
+          setEnriched(fallbackRows.length > 0 ? fallbackRows : null);
+          setLoading(false);
+        });
+      }
+
       _cache.set(key, rows);
       setEnriched(rows.length > 0 ? rows : null);
       setLoading(false);
     });
 
     return () => { cancelled = true; };
-  }, [active, especie, raza]);
+  }, [active, especie, raza, lang]);
 
   return { enriched, loading };
 }

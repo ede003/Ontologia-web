@@ -37,6 +37,7 @@ export const GENERIC_CLASS_TERMS = new Set([
 
 // Schema-level meta terms: describe ontology classes, not data instances.
 const META_CLASS_MAP: Record<string, OntologyClass> = {
+  // ── Español ──────────────────────────────────────────────
   animal: 'Animal', animales: 'Animal', mascota: 'Animal', mascotas: 'Animal',
   enfermedad: 'Enfermedad', enfermedades: 'Enfermedad',
   medicamento: 'Medicamento', medicamentos: 'Medicamento',
@@ -54,6 +55,29 @@ const META_CLASS_MAP: Record<string, OntologyClass> = {
   operacion: 'Cirugia', operaciones: 'Cirugia',
   dueno: 'Dueno', duenos: 'Dueno', dueño: 'Dueno', dueños: 'Dueno',
   propietario: 'Dueno', propietarios: 'Dueno',
+
+  // ── Inglés ───────────────────────────────────────────────
+  pet: 'Animal', pets: 'Animal',
+  disease: 'Enfermedad', diseases: 'Enfermedad', illness: 'Enfermedad', illnesses: 'Enfermedad',
+  medication: 'Medicamento', medications: 'Medicamento', drug: 'Medicamento', drugs: 'Medicamento',
+  medicine: 'Medicamento', medicines: 'Medicamento',
+  veterinarian: 'Veterinario', veterinary: 'Veterinario',
+  appointment: 'Consulta', appointments: 'Consulta', consultation: 'Consulta',
+  vaccine: 'Vacunacion', vaccines: 'Vacunacion', vaccination: 'Vacunacion',
+  treatment: 'Tratamiento', treatments: 'Tratamiento',
+  exam: 'ExamenMedico', examination: 'ExamenMedico', 'medical exam': 'ExamenMedico',
+  surgery: 'Cirugia', surgeries: 'Cirugia', operation: 'Cirugia',
+  owner: 'Dueno', owners: 'Dueno',
+
+  // ── Portugués ────────────────────────────────────────────
+  mascote: 'Animal', mascotes: 'Animal',
+  doença: 'Enfermedad', doenças: 'Enfermedad', doenca: 'Enfermedad', doencas: 'Enfermedad',
+  veterinário: 'Veterinario', veterinária: 'Veterinario',
+  vacinação: 'Vacunacion', vacinacao: 'Vacunacion', vacina: 'Vacunacion', vacinas: 'Vacunacion',
+  tratamento: 'Tratamiento', tratamentos: 'Tratamiento',
+  exame: 'ExamenMedico', exames: 'ExamenMedico',
+  cirurgia: 'Cirugia', cirurgias: 'Cirugia',
+  dono: 'Dueno', donos: 'Dueno', proprietário: 'Dueno', proprietario: 'Dueno',
 }
 
 // All text properties to query per class when building the dynamic entity map.

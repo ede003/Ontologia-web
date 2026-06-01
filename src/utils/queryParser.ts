@@ -2,6 +2,7 @@
 import { StemmerEs, StopwordsEs, TokenizerEs } from '@nlpjs/lang-es'
 import type { EntityMap } from './entityDetector'
 import { detectEntityType, resolveSpeciesValue, resolveRazaValue } from './entityDetector'
+import { searchTermTranslations } from '../i18n/translations'
 
 const stemmer = new StemmerEs()
 stemmer.stopwords = new StopwordsEs()
@@ -15,7 +16,7 @@ export interface ParsedQuery {
   primaryTerm: string
   secondaryTerm: string | null
   rawInput: string
-  filters: Record<string, string>
+  filters: Record<string, string>  // edad, sexo, raza, especie detectados
 }
 
 // Detecta edad: "5 años", "3 años", número suelto
@@ -38,7 +39,7 @@ function extractAge(tokens: string[]): { age: string | null; remaining: string[]
   return { age: null, remaining }
 }
 
-// Detecta sexo: "macho", "hembra" y sus plurales
+// Detecta sexo: "macho", "hembra" y sus variantes/plurales
 function extractSexo(tokens: string[]): { sexo: string | null; remaining: string[] } {
   const sexoMap: Record<string, string> = {
     macho: 'Macho', machos: 'Macho',
@@ -57,6 +58,7 @@ function extractSexo(tokens: string[]): { sexo: string | null; remaining: string
 }
 
 // Detecta raza de múltiples palabras: "golden retriever", "maine coon"
+// Prueba combinaciones de términos consecutivos (más largo primero)
 function extractRaza(
   tokens: string[],
   entityMap: EntityMap,
@@ -74,7 +76,7 @@ function extractRaza(
   return { raza: null, remaining: tokens }
 }
 
-// Detecta especie
+// Detecta especie de múltiples palabras
 function extractEspecie(
   tokens: string[],
   entityMap: EntityMap,
@@ -92,7 +94,7 @@ function extractEspecie(
   return { especie: null, remaining: tokens }
 }
 
-// Detecta instancia compuesta no-Animal (Leucemia Felina, etc.)
+// Intenta detectar una instancia compuesta (nombre de enfermedad, medicamento, etc.)
 function findLongestInstanceMatch(
   terms: string[],
   entityMap: EntityMap,
@@ -102,6 +104,7 @@ function findLongestInstanceMatch(
       const phrase = terms.slice(start, start + len).join(' ')
       const cls = detectEntityType(phrase, entityMap)
       if (cls && cls !== 'Animal') {
+        // Solo para instancias no-Animal (enfermedades, medicamentos, etc.)
         const remaining = [...terms.slice(0, start), ...terms.slice(start + len)]
         return { primaryTerm: phrase, remainingTerms: remaining }
       }
@@ -110,14 +113,24 @@ function findLongestInstanceMatch(
   return null
 }
 
+// Traduce cada palabra del input EN/PT → ES antes de procesar
+function translateInput(input: string): string {
+  const lower = input.toLowerCase().trim()
+  // Primero intenta frases completas (ej: "golden retriever")
+  if (searchTermTranslations[lower]) return searchTermTranslations[lower]
+  // Luego palabra por palabra
+  return lower.split(' ').map(word => searchTermTranslations[word] ?? word).join(' ')
+}
+
 export function parseQuery(rawInput: string, entityMap?: EntityMap): ParsedQuery {
-  const lower = rawInput.toLowerCase().trim()
+  const translated = translateInput(rawInput)
+  const lower = translated.toLowerCase().trim()
   const allTokens = tokenizer.tokenize(lower, true)
   const terms = stopwords.removeStopwords(allTokens)
   const stemmed = stemmer.tokenizeAndStem(lower, false)
   const filters: Record<string, string> = {}
 
-  // ── Paso 1: extraer edad y sexo (incluyendo plurales) ────────────────────
+  // ── Paso 1: extraer atributos simples (edad, sexo incluyendo plurales/variantes) ──
   let workingTokens = [...allTokens]
 
   const { age, remaining: afterAge } = extractAge(workingTokens)
@@ -126,7 +139,7 @@ export function parseQuery(rawInput: string, entityMap?: EntityMap): ParsedQuery
   const { sexo, remaining: afterSexo } = extractSexo(workingTokens)
   if (sexo) { filters.sexo = sexo; workingTokens = afterSexo }
 
-  // Tokens limpios sin stopwords
+  // Tokens limpios sin stopwords para continuar
   let cleanTerms = stopwords.removeStopwords(workingTokens).filter(t => t.length > 0)
 
   // ── Paso 2: extraer raza y especie si hay entityMap ──────────────────────
@@ -138,25 +151,24 @@ export function parseQuery(rawInput: string, entityMap?: EntityMap): ParsedQuery
     if (especie) { filters.especie = especie; cleanTerms = afterEspecie }
   }
 
-  // ── Paso 3: si hay filtros de Animal → modo Animal directo ───────────────
+  // ── Paso 3: si hay filtros de Animal (especie, raza, sexo o edad) ─────────
   if (filters.especie || filters.raza || filters.sexo || filters.edad) {
-    // Si quedan términos limpios pueden ser una segunda entidad (relacional)
-    // pero si no quedan, es una búsqueda pura de Animal con atributos
+    // Si no quedan términos limpios de texto, es una búsqueda pura de atributos de Animal
     if (cleanTerms.length === 0) {
       return {
-        terms, stemmed,
+        terms,
+        stemmed,
         isRelational: false,
-        primaryTerm: 'animales',  // término genérico → no genera FILTER de texto
+        primaryTerm: filters.especie ?? filters.raza ?? 'animales', // Usa la entidad detectada o el genérico
         secondaryTerm: null,
         rawInput,
         filters,
       }
     }
-    // Quedan términos → puede ser relacional (ej: "gatos con rabia")
-    // se continúa al paso 4
+    // Si quedan términos (ej. "gatos con rabia"), no sale directo aquí para evaluar si es una relación en Paso 4
   }
 
-  // ── Paso 4: detectar instancia compuesta no-Animal ───────────────────────
+  // ── Paso 4: detectar instancia compuesta no-Animal (Leucemia Felina, etc.) ─
   if (entityMap && cleanTerms.length >= 2) {
     const instanceMatch = findLongestInstanceMatch(cleanTerms, entityMap)
     if (instanceMatch) {

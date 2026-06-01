@@ -73,17 +73,19 @@ const CLASS_EXTRA: Record<OntologyClass, string> = {
   OPTIONAL { ?instance vet:nivelGravedad ?nivelGravedad }
   OPTIONAL { ?instance vet:sintomas ?sintomas }
   OPTIONAL { ?instance vet:descripcionEnfermedad ?descripcionEnfermedad }`,
-  Medicamento: `
+Medicamento: `
   OPTIONAL { ?instance vet:tipoMedicamento ?tipoMedicamento }
   OPTIONAL { ?instance vet:dosisMedicamento ?dosisMedicamento }
   OPTIONAL { ?instance vet:viaAdministracion ?viaAdministracion }
+
   OPTIONAL {
     ?instance vet:trata ?enf .
-    ?enf vet:nombreEnfermedad ?nombreEnfermedad .
+    OPTIONAL { ?enf vet:nombreEnfermedad ?nombreEnfermedad }
   }
+
   OPTIONAL {
     ?servicio vet:usa ?instance .
-    ?servicio vet:descripcionServicio ?descripcionServicio .
+    OPTIONAL { ?servicio vet:descripcionServicio ?descripcionServicio }
   }`,
   Veterinario: `
   OPTIONAL { ?instance vet:telefono ?telefono }

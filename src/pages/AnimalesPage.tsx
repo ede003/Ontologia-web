@@ -5,7 +5,10 @@ import { type Individual } from '../services/ontologyService';
 import { getAnimales } from '../repositories/ontologyRepository';
 import logo from '../assets/images/logoveterinaria.png';
 import { Search } from 'lucide-react';
+import { type Language, useTranslations } from '../i18n/translations';
+import { LanguageSelector } from '../components/LanguageSelector';
 
+// Intelligent search pipeline
 import { parseQuery } from '../utils/queryParser';
 import { detectEntityType } from '../utils/entityDetector';
 import { buildQuery } from '../utils/sparqlBuilder';
@@ -18,34 +21,42 @@ import ResultRenderer, { type QueryMeta } from '../components/ResultRenderer';
 interface DrawerProps {
   animal: Individual;
   onClose: () => void;
+  lang: Language;
 }
 
-function AnimalDrawer({ animal, onClose }: DrawerProps) {
-  const { enriched, loading } = useDbpediaEnrich(animal);
+function AnimalDrawer({ animal, onClose, lang }: DrawerProps) {
+  const t = useTranslations(lang);
+  const { enriched, loading } = useDbpediaEnrich(animal, lang);
   const p = animal.props;
 
   const fields: [string, string][] = [
-    ['Nombre',       p.nombreAnimal  ?? '—'],
-    ['Especie',      p.especie       ?? '—'],
-    ['Raza',         p.raza          ?? '—'],
-    ['Sexo',         p.sexo          ?? '—'],
-    ['Edad',         p.edad   ? `${p.edad} años` : '—'],
-    ['Peso',         p.peso   ? `${p.peso} kg`   : '—'],
-    ['Color',        p.color         ?? '—'],
-    ['Enfermedad',   p.enfermedades  ?? '—'],
-    ['Dueño',        p.dueno         ?? '—'],
-    ['Veterinario',  p.veterinario   ?? '—'],
-  ];
+  [t.drawerFieldName,    p.nombreAnimal ?? '—'],
+  [t.drawerFieldSpecies, p.especie ?? '—'],
+  [t.drawerFieldBreed,   p.raza ?? '—'],
+  [t.drawerFieldSex,     p.sexo ?? '—'],
+  [t.drawerFieldAge,     p.edad ? `${p.edad} ${t.drawerFieldAgeUnit}` : '—'],
+  [t.drawerFieldWeight,  p.peso ? `${p.peso} ${t.drawerFieldWeightUnit}` : '—'],
+  [t.drawerFieldColor,   p.color ?? '—'],
+  [t.drawerFieldDisease, p.enfermedades ?? '—'],
+  ['Dueño',              p.dueno ?? '—'],
+  ['Veterinario',        p.veterinario ?? '—'],
+];
 
   return (
     <aside className="vet-drawer">
       <div className="vet-drawer__header">
         <h2>{p.nombreAnimal ?? 'Animal'}</h2>
-        <button className="vet-drawer__close" onClick={onClose} aria-label="Cerrar">×</button>
+        <button
+          className="vet-drawer__close"
+          onClick={onClose}
+          aria-label={t.drawerClose}
+        >
+          ×
+        </button>
       </div>
 
       <div className="vet-drawer__body">
-        <p className="vet-drawer__section-label">Datos de la ontología</p>
+        <p className="vet-drawer__section-label">{t.drawerOntologyData}</p>
         <dl className="vet-drawer__fields">
           {fields.map(([label, value]) => (
             <>
@@ -57,14 +68,16 @@ function AnimalDrawer({ animal, onClose }: DrawerProps) {
 
         <hr className="vet-drawer__divider" />
 
-        {loading && <p className="vet-drawer__muted">Consultando DBpedia…</p>}
+        {loading && (
+          <p className="vet-drawer__muted">{t.drawerConsultingDbpedia}</p>
+        )}
 
         {!loading && enriched && enriched.length > 0 && (() => {
           const row = enriched[0];
           return (
             <>
               <p className="vet-drawer__section-label">
-                Información adicional
+                {t.drawerAdditionalInfo}
                 <span className="vet-badge">DBpedia</span>
               </p>
 
@@ -85,45 +98,58 @@ function AnimalDrawer({ animal, onClose }: DrawerProps) {
               )}
 
               <div className="vet-drawer__links">
-                {row.page && (
-                  <a className="vet-drawer__link" href={row.page} target="_blank" rel="noopener noreferrer">
-                    Ver en Wikipedia →
-                  </a>
-                )}
-                {row.dbpediaUri && (
-                  <a className="vet-drawer__link" href={row.dbpediaUri} target="_blank" rel="noopener noreferrer">
-                    Ver en DBpedia →
-                  </a>
-                )}
-              </div>
+  {row.page && (
+    <a
+      className="vet-drawer__link"
+      href={row.page}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {t.drawerWikipediaLink}
+    </a>
+  )}
+
+  {row.dbpediaUri && (
+    <a
+      className="vet-drawer__link"
+      href={row.dbpediaUri}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      Ver en DBpedia →
+    </a>
+  )}
+</div>
             </>
           );
         })()}
 
         {!loading && (!enriched || enriched.length === 0) && (
-          <p className="vet-drawer__muted">Sin información adicional en DBpedia.</p>
+          <p className="vet-drawer__muted">{t.drawerNoDbpedia}</p>
         )}
       </div>
     </aside>
   );
 }
 
-// ── AnimalTable ───────────────────────────────────────────────────────────────
+// ── Tabla de animales reutilizable ────────────────────────────────────────────
 
 interface AnimalTableProps {
   animales: Individual[];
   selected: Individual | null;
   onSelect: (a: Individual | null) => void;
   footer?: string;
+  lang: Language;
 }
 
-function AnimalTable({ animales, selected, onSelect, footer }: AnimalTableProps) {
+function AnimalTable({ animales, selected, onSelect, footer, lang }: AnimalTableProps) {
+  const t = useTranslations(lang);
   return (
     <div className="vet-table-wrap">
       <table className="vet-table">
         <thead>
           <tr>
-            {['Nombre', 'Especie', 'Raza', 'Sexo', 'Edad', 'Enfermedades', 'Dueño', 'Veterinario'].map(col => (
+            {[t.colName, t.colSpecies, t.colBreed, t.colSex, t.colAge, t.colDiseases, 'Dueño', 'Veterinario'].map(col => (
               <th key={col}>{col}</th>
             ))}
           </tr>
@@ -143,18 +169,18 @@ function AnimalTable({ animales, selected, onSelect, footer }: AnimalTableProps)
                     ? <span className="vet-pill">{a.props.especie}</span>
                     : '—'}
                 </td>
-                <td>{a.props.raza         ?? '—'}</td>
-                <td>{a.props.sexo         ?? '—'}</td>
-                <td>{a.props.edad         ?? '—'}</td>
+                <td>{a.props.raza ?? '—'}</td>
+                <td>{a.props.sexo ?? '—'}</td>
+                <td>{a.props.edad ?? '—'}</td>
                 <td>{a.props.enfermedades ?? '—'}</td>
-                <td>{a.props.dueno        ?? '—'}</td>
-                <td>{a.props.veterinario  ?? '—'}</td>
+                <td>{a.props.dueno ?? '—'}</td>
+                <td>{a.props.veterinario ?? '—'}</td>
               </tr>
             );
           })}
           {animales.length === 0 && (
             <tr className="empty-row">
-              <td colSpan={8}>Sin resultados</td>
+              <td colSpan={8}>{t.noResults}</td>
             </tr>
           )}
         </tbody>
@@ -168,7 +194,13 @@ function AnimalTable({ animales, selected, onSelect, footer }: AnimalTableProps)
 
 // ── AnimalesPage ──────────────────────────────────────────────────────────────
 
-export function AnimalesPage() {
+interface AnimalesPageProps {
+  lang: Language;
+  setLang: (l: Language) => void;
+}
+
+export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
+  const t = useTranslations(lang);
   const { store, loading: ontologyLoading, error: ontologyError } = useOntology();
   const entityMap = useEntityMap(store);
 
@@ -183,7 +215,7 @@ export function AnimalesPage() {
   const [queryMeta, setQueryMeta]                   = useState<QueryMeta | null>(null);
   const [intelligentLoading, setIntelligentLoading] = useState(false);
 
-  // Cargar todos los animales al inicio
+  // Load all animals
   useEffect(() => {
     if (!store) return;
     setQueryLoading(true);
@@ -192,7 +224,7 @@ export function AnimalesPage() {
       .catch(() => setQueryLoading(false));
   }, [store]);
 
-  // Pipeline SPARQL cuando cambia el input de búsqueda
+  // Run intelligent SPARQL pipeline whenever search changes
   useEffect(() => {
     if (!search.trim() || !store) {
       setSparqlResults(null);
@@ -217,20 +249,24 @@ export function AnimalesPage() {
         console.log(`runQuery → ${results.length} resultados`)
         console.groupEnd()
         setSparqlResults(results);
-
         const hasAnimalFilters =
-          !!(parsed.filters.especie || parsed.filters.raza ||
-             parsed.filters.sexo   || parsed.filters.edad);
+  !!(
+    parsed.filters.especie ||
+    parsed.filters.raza ||
+    parsed.filters.sexo ||
+    parsed.filters.edad
+  );
 
-        const resolvedPrimaryType = hasAnimalFilters ? 'Animal' : primaryType;
+const resolvedPrimaryType =
+  hasAnimalFilters ? 'Animal' : primaryType;
 
-        setQueryMeta({
-          isRelational: parsed.isRelational,
-          primaryType: resolvedPrimaryType,
-          secondaryType,
-          primaryTerm: parsed.primaryTerm,
-          secondaryTerm: parsed.secondaryTerm,
-        });
+setQueryMeta({
+  isRelational: parsed.isRelational,
+  primaryType: resolvedPrimaryType,
+  secondaryType,
+  primaryTerm: parsed.primaryTerm,
+  secondaryTerm: parsed.secondaryTerm
+});
       })
       .catch((err) => {
         console.error('[AnimalesPage] runQuery error:', err);
@@ -241,36 +277,36 @@ export function AnimalesPage() {
       .finally(() => setIntelligentLoading(false));
   }, [search, store, entityMap]);
 
-  // Modo tabla de animales: no relacional y primaryType es Animal (o null)
   const isAnimalTableMode = !queryMeta?.isRelational &&
     (!queryMeta?.primaryType || queryMeta.primaryType === 'Animal');
 
-  // Especies únicas para el dropdown
+  // Unique species for dropdown
   const especies = useMemo<string[]>(() => {
     const set = new Set<string>();
     for (const a of animales) if (a.props.especie) set.add(a.props.especie);
     return Array.from(set).sort();
   }, [animales]);
 
-  // Animales filtrados solo por especie (sin búsqueda)
+  // Animals filtered by especie dropdown (used when no search)
   const animalesPorEspecie = useMemo<Individual[]>(() => {
     if (!especieFilter) return animales;
     return animales.filter(a => a.props.especie === especieFilter);
   }, [animales, especieFilter]);
 
-  // Animales desde SPARQL + filtro dropdown combinados
+  // Animals from SPARQL results + especie filter combined
   const displayAnimals = useMemo<Individual[]>(() => {
     if (!isAnimalTableMode || !sparqlResults) return [];
     const uriSet = new Set(sparqlResults.map(r => r.instance).filter(Boolean));
     const matched = animales.filter(a => uriSet.has(a.uri));
-    return matched.filter(a => !especieFilter || a.props.especie === especieFilter);
+    const filtered = matched.filter(a => !especieFilter || a.props.especie === especieFilter);
+    return filtered;
   }, [isAnimalTableMode, sparqlResults, animales, especieFilter]);
 
   if (ontologyLoading || queryLoading) {
     return (
       <div className="vet-state">
         <span className="vet-spinner" />
-        {ontologyLoading ? 'Cargando ontología…' : 'Ejecutando consulta SPARQL…'}
+        {ontologyLoading ? t.loadingOntology : t.loadingSparql}
       </div>
     );
   }
@@ -291,14 +327,15 @@ export function AnimalesPage() {
         <div className="vet-header__left">
           <img src={logo} alt="Logo Veterinaria" className="vet-header__logo" />
           <div>
-            <p className="vet-header__title">Veterinaria</p>
-            <p className="vet-header__sub font-open-sans text-sm">Buscador Semántico</p>
+            <p className="vet-header__title">{t.headerTitle}</p>
+        <p className="vet-header__sub font-open-sans text-sm">{t.headerSub}</p>
           </div>
         </div>
+        <LanguageSelector lang={lang} setLang={setLang} t={t} />
       </header>
 
       <div className="vet-page">
-        <h1 className="vet-page__title">Buscador Semántico Veterinario</h1>
+        <h1 className="vet-page__title">{t.pageTitle}</h1>
 
         <div className="vet-filters">
           <div className="vet-search-wrapper">
@@ -309,7 +346,7 @@ export function AnimalesPage() {
               className="vet-input"
               style={{ width: '100%' }}
               type="text"
-              placeholder="Buscar por nombre, especie, enfermedad…"
+              placeholder={t.searchPlaceholder}
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
@@ -320,29 +357,32 @@ export function AnimalesPage() {
             value={especieFilter}
             onChange={e => setEspecieFilter(e.target.value)}
           >
-            <option value="">Todas las especies</option>
+            <option value="">{t.allSpecies}</option>
             {especies.map(esp => (
               <option key={esp} value={esp}>{esp}</option>
             ))}
           </select>
         </div>
 
-        {/* ── Área de resultados ───────────────────────────────────────── */}
+        {/* ── Results area ─────────────────────────────────────────────── */}
 
         {noSearch && !especieFilter ? (
+          /* Sin búsqueda ni filtro → estado vacío */
           <div className="vet-empty-state" />
 
         ) : noSearch && especieFilter ? (
-          /* Solo filtro de especie activo */
+          /* Solo filtro de especie activo → mostrar animales directo */
           <div className="vet-layout">
             <AnimalTable
               animales={animalesPorEspecie}
               selected={selected}
               onSelect={setSelected}
-              footer={`${animalesPorEspecie.length} animales · ${especieFilter}${selected ? ' · Haz clic en la misma fila para cerrar el panel' : ' · Haz clic en una fila para ver detalles'}`}
+              footer={`${animalesPorEspecie.length} ${t.footerAnimals} · ${especieFilter}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`}
+              lang={lang} 
             />
             {selected && (
-              <AnimalDrawer animal={selected} onClose={() => setSelected(null)} />
+              <AnimalDrawer animal={selected} onClose={() => setSelected(null)} lang={lang} />
+              
             )}
           </div>
 
@@ -359,16 +399,18 @@ export function AnimalesPage() {
               animales={displayAnimals}
               selected={selected}
               onSelect={setSelected}
-              footer={`${displayAnimals.length} de ${animales.length} animales${especieFilter ? ` · ${especieFilter}` : ''}${selected ? ' · Haz clic en la misma fila para cerrar el panel' : ' · Haz clic en una fila para ver detalles'}`}
+              footer={`${displayAnimals.length} ${t.footerOf} ${animales.length} ${t.footerAnimals}${especieFilter ? ` · ${especieFilter}` : ''}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`}
+              lang={lang} 
             />
             {selected && (
-              <AnimalDrawer animal={selected} onClose={() => setSelected(null)} />
+              <AnimalDrawer animal={selected} onClose={() => setSelected(null)} lang={lang} />
+              
             )}
           </div>
 
         ) : sparqlResults !== null && queryMeta !== null ? (
           /* Relacional o no-animal → ResultRenderer */
-          <ResultRenderer results={sparqlResults} queryMeta={queryMeta} />
+          <ResultRenderer results={sparqlResults} queryMeta={queryMeta} lang={lang} />
 
         ) : null}
       </div>

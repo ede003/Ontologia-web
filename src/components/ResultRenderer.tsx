@@ -1,8 +1,9 @@
 // Renders SPARQL query results dynamically based on the query type.
 // Relational queries show a three-column table (subject → relation → object).
-// Single-class queries derive columns from the result row keys, with Spanish labels.
+// Single-class queries derive columns from the result row keys.
 
 import type { OntologyClass } from '../utils/entityDetector'
+import { type Language, useTranslations } from '../i18n/translations'
 
 export interface QueryMeta {
   isRelational: boolean
@@ -15,6 +16,7 @@ export interface QueryMeta {
 interface ResultRendererProps {
   results: Record<string, string>[]
   queryMeta: QueryMeta
+  lang: Language
 }
 
 function shortUri(uri: string): string {
@@ -32,7 +34,6 @@ function cellValue(val: string | undefined): string {
 // Columns to skip in generic rendering (URIs shown in other columns)
 const SKIP_KEYS = new Set(['instance', 'subject', 'object', 'enf', 'servicio'])
 
-// Human-readable Spanish labels for RDF property keys
 const COLUMN_LABELS: Record<string, string> = {
   name:                 'Nombre',
   nombreAnimal:         'Nombre',
@@ -71,9 +72,11 @@ function colLabel(key: string): string {
   return COLUMN_LABELS[key] ?? key
 }
 
-export default function ResultRenderer({ results, queryMeta }: ResultRendererProps) {
+export default function ResultRenderer({ results, queryMeta, lang }: ResultRendererProps) {
+  const t = useTranslations(lang)
+
   if (!results || results.length === 0) {
-    return <p className="vet-state">Sin resultados para esta búsqueda.</p>
+    return <p className="vet-state">{t.noResultsSearch}</p>
   }
 
   if (queryMeta.isRelational && queryMeta.primaryType && queryMeta.secondaryType) {
@@ -83,7 +86,7 @@ export default function ResultRenderer({ results, queryMeta }: ResultRendererPro
           <thead>
             <tr>
               <th>{queryMeta.primaryType}</th>
-              <th>Relación</th>
+              <th>{t.colRelation}</th>
               <th>{queryMeta.secondaryType}</th>
             </tr>
           </thead>
@@ -100,7 +103,7 @@ export default function ResultRenderer({ results, queryMeta }: ResultRendererPro
           </tbody>
         </table>
         <div className="vet-table-footer">
-          {results.length} resultado{results.length !== 1 ? 's' : ''}
+          {results.length} {results.length !== 1 ? t.resultCountPlural : t.resultCount}
         </div>
       </div>
     )
@@ -128,7 +131,7 @@ export default function ResultRenderer({ results, queryMeta }: ResultRendererPro
         </tbody>
       </table>
       <div className="vet-table-footer">
-        {results.length} resultado{results.length !== 1 ? 's' : ''}
+        {results.length} {results.length !== 1 ? t.resultCountPlural : t.resultCount}
       </div>
     </div>
   )
