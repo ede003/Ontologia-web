@@ -352,7 +352,7 @@ setQueryMeta({
             />
           </div>
 
-          <select
+          {/* <select
             className="vet-select"
             value={especieFilter}
             onChange={e => setEspecieFilter(e.target.value)}
@@ -361,7 +361,7 @@ setQueryMeta({
             {especies.map(esp => (
               <option key={esp} value={esp}>{esp}</option>
             ))}
-          </select>
+          </select> */}
         </div>
 
         {/* ── Results area ─────────────────────────────────────────────── */}
