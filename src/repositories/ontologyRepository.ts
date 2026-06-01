@@ -55,13 +55,21 @@ SELECT ?subject ?predicate ?object WHERE {
 
 export async function getAnimales(store: Store): Promise<Individual[]> {
   const sparql = `${PREFIXES}
-SELECT ?animal ?predicate ?object ?nombreEnfermedad WHERE {
+SELECT ?animal ?predicate ?object ?nombreEnfermedad ?nombreDueno ?nombreVeterinario WHERE {
   ?animal rdf:type vet:Animal .
   ?animal ?predicate ?object .
 
   OPTIONAL {
     ?enfermedad vet:afectaA ?animal .
     ?enfermedad vet:nombreEnfermedad ?nombreEnfermedad .
+  }
+  OPTIONAL {
+    ?animal vet:tieneDueno ?dueno .
+    ?dueno vet:nombre ?nombreDueno .
+  }
+  OPTIONAL {
+    ?animal vet:esAtendidoPor ?veterinario .
+    ?veterinario vet:nombre ?nombreVeterinario .
   }
 }`;
 
@@ -71,10 +79,12 @@ SELECT ?animal ?predicate ?object ?nombreEnfermedad WHERE {
   const bySubject = new Map<string, Record<string, string>>();
 
   for (const row of rows) {
-    const animal = row.get('animal')?.value;
-    const predicate = row.get('predicate')?.value;
-    const object = row.get('object')?.value;
-    const nombreEnfermedad = row.get('nombreEnfermedad')?.value;
+    const animal            = row.get('animal')?.value;
+    const predicate         = row.get('predicate')?.value;
+    const object            = row.get('object')?.value;
+    const nombreEnfermedad  = row.get('nombreEnfermedad')?.value;
+    const nombreDueno       = row.get('nombreDueno')?.value;
+    const nombreVeterinario = row.get('nombreVeterinario')?.value;
 
     if (!animal) continue;
     if (!bySubject.has(animal)) bySubject.set(animal, {});
@@ -82,10 +92,9 @@ SELECT ?animal ?predicate ?object ?nombreEnfermedad WHERE {
     if (predicate && object) {
       bySubject.get(animal)![localName(predicate)] = object;
     }
-
-    if (nombreEnfermedad) {
-      bySubject.get(animal)!.enfermedades = nombreEnfermedad;
-    }
+    if (nombreEnfermedad)  bySubject.get(animal)!.enfermedades  = nombreEnfermedad;
+    if (nombreDueno)       bySubject.get(animal)!.dueno         = nombreDueno;
+    if (nombreVeterinario) bySubject.get(animal)!.veterinario   = nombreVeterinario;
   }
 
   const animales = Array.from(bySubject.entries()).map(([uri, props]) => ({ uri, props }));

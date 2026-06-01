@@ -1,6 +1,6 @@
 // Renders SPARQL query results dynamically based on the query type.
 // Relational queries show a three-column table (subject → relation → object).
-// Single-class queries derive columns from the result row keys.
+// Single-class queries derive columns from the result row keys, with Spanish labels.
 
 import type { OntologyClass } from '../utils/entityDetector'
 
@@ -30,7 +30,46 @@ function cellValue(val: string | undefined): string {
 }
 
 // Columns to skip in generic rendering (URIs shown in other columns)
-const SKIP_KEYS = new Set(['instance', 'subject', 'object'])
+const SKIP_KEYS = new Set(['instance', 'subject', 'object', 'enf', 'servicio'])
+
+// Human-readable Spanish labels for RDF property keys
+const COLUMN_LABELS: Record<string, string> = {
+  name:                 'Nombre',
+  nombreAnimal:         'Nombre',
+  nombreEnfermedad:     'Enfermedad',
+  nombreMedicamento:    'Medicamento',
+  tipoMedicamento:      'Tipo',
+  dosisMedicamento:     'Dosis',
+  viaAdministracion:    'Vía de administración',
+  descripcionServicio:  'Servicio clínico',
+  tipoEnfermedad:       'Tipo enfermedad',
+  nivelGravedad:        'Gravedad',
+  sintomas:             'Síntomas',
+  descripcionEnfermedad:'Descripción',
+  especie:              'Especie',
+  raza:                 'Raza',
+  sexo:                 'Sexo',
+  edad:                 'Edad',
+  peso:                 'Peso',
+  color:                'Color',
+  telefono:             'Teléfono',
+  especialidad:         'Especialidad',
+  fecha:                'Fecha',
+  diagnosticoInicial:   'Diagnóstico inicial',
+  sintomasReportados:   'Síntomas reportados',
+  tipoVacuna:           'Tipo vacuna',
+  dosisVacunacion:      'Dosis',
+  tipoTratamiento:      'Tipo tratamiento',
+  duracion:             'Duración',
+  tipoExamen:           'Tipo examen',
+  resultado:            'Resultado',
+  tipoCirugia:          'Tipo cirugía',
+  nombre:               'Nombre',
+}
+
+function colLabel(key: string): string {
+  return COLUMN_LABELS[key] ?? key
+}
 
 export default function ResultRenderer({ results, queryMeta }: ResultRendererProps) {
   if (!results || results.length === 0) {
@@ -75,7 +114,7 @@ export default function ResultRenderer({ results, queryMeta }: ResultRendererPro
       <table className="vet-table">
         <thead>
           <tr>
-            {columns.map(col => <th key={col}>{col}</th>)}
+            {columns.map(col => <th key={col}>{colLabel(col)}</th>)}
           </tr>
         </thead>
         <tbody>

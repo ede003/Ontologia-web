@@ -8,7 +8,8 @@ function buildAnimalQuery(slug: string): string {
   return `PREFIX dbo:  <http://dbpedia.org/ontology/>
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 
-SELECT ?abstract ?thumbnail ?page WHERE {
+SELECT ?abstract ?thumbnail ?page ?dbpediaUri WHERE {
+  BIND(<${uri}> AS ?dbpediaUri)
   <${uri}> dbo:abstract ?abstract .
   OPTIONAL { <${uri}> dbo:thumbnail ?thumbnail }
   OPTIONAL { <${uri}> foaf:isPrimaryTopicOf ?page }
@@ -21,7 +22,8 @@ function buildEnfermedadQuery(slug: string): string {
   return `PREFIX dbo:  <http://dbpedia.org/ontology/>
 PREFIX foaf: <http://xmlns.com/foaf/0.1/>
 
-SELECT ?abstract ?page WHERE {
+SELECT ?abstract ?page ?dbpediaUri WHERE {
+  BIND(<${uri}> AS ?dbpediaUri)
   <${uri}> dbo:abstract ?abstract .
   OPTIONAL { <${uri}> foaf:isPrimaryTopicOf ?page }
   FILTER (lang(?abstract) = 'es' || lang(?abstract) = 'en')
