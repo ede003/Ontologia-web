@@ -1,8 +1,8 @@
 # Documentación técnica — Ontología Veterinaria Web
 
-Aplicación React + TypeScript que carga una ontología OWL local y la enriquece
-con información semántica de DBpedia. Todo el procesamiento ocurre en el cliente
-(sin backend).
+Aplicación React + TypeScript que carga una ontología OWL local, descubre su
+schema dinámicamente y expone un buscador semántico sin backend. Todo el
+procesamiento ocurre en el cliente.
 
 ## Estructura
 
@@ -10,13 +10,14 @@ con información semántica de DBpedia. Todo el procesamiento ocurre en el clien
 docs/
   ontologia/
     parseo-rdf.md          Carga y parseo del archivo RDF/XML con DOMParser + n3
-    sparql-local.md        Consultas SPARQL sobre el store local con Comunica
+    sparql-local.md        Schema discovery + consultas SPARQL sobre el store local
   dbpedia/
     endpoint-sparql.md     Estrategia de consulta al endpoint SPARQL de DBpedia
-    mapas-uri.md           Mapeo raza/especie/enfermedad → slug de DBpedia
+    mapas-uri.md           Resolución dinámica de URIs DBpedia (Lookup API)
   ui/
     animales-page.md       AnimalesPage: tabla, filtros, drawer lateral
-    hook-enrich.md         useDbpediaEnrich: carga lazy y caché de enriquecimiento
+    hook-enrich.md         useOntologySchema, useEntityMap, useDbpediaEnrich
+  search-architecture.md   Pipeline completo: parseQuery → sparqlBuilder → ResultRenderer
 ```
 
 ## Stack
@@ -28,7 +29,8 @@ docs/
 | Store RDF | n3 (NamedNode, Literal, Store) |
 | Motor SPARQL local | `@comunica/query-sparql-rdfjs` |
 | Parseo RDF/XML | `DOMParser` nativo del browser |
-| Enriquecimiento | DBpedia SPARQL (`es.dbpedia.org/sparql`) |
+| NLP español | `@nlpjs/lang-es` (tokenizer, stemmer, stopwords) |
+| Enriquecimiento | DBpedia SPARQL (`es.dbpedia.org/sparql`) + Lookup API |
 
 ## Flujo general
 
@@ -36,20 +38,42 @@ docs/
 Archivo RDF/XML (public/)
        │
        ▼ fetch + DOMParser
-   n3 Store (in-memory)
+   n3 Store (in-memory, ~2 436 triples)
        │
-       ▼ Comunica SPARQL
-  Individual[]  ──────────────────────► AnimalesPage (tabla)
-                                               │
-                                        click en fila
-                                               │
-                                               ▼
-                                     useDbpediaEnrich (hook)
-                                               │
-                                               ▼ SPARQL HTTP GET
-                                     es.dbpedia.org/sparql
-                                               │
-                                               ▼
-                                       Panel lateral (drawer)
-                                   abstract + thumbnail + wikiPage
+       ├──────────────────────────────────────────────────────────────┐
+       ▼ schemaDiscovery.ts (SPARQL introspección)                    │
+   OntologySchema                                                     │
+   (clases, props, relaciones)                                        │
+       │                                                              │
+       ▼ buildEntityMap()                                             │
+   EntityMap                                                          │
+   (termToClass + termToPropertyValue)                                │
+       │                                                              │
+       ▼ parseQuery(input, entityMap, schema)                         │
+   ParsedQuery                                                        │
+   (searchMode, entityContexts[])                                     │
+       │                                                              │
+       ▼ buildQuery(parsed, schema)                                   │
+   SPARQL string                                                      │
+       │                                                              │
+       ▼ runQuery(store, sparql)                                      │
+   Record<string, string>[]                                           │
+       │                                                              │
+       ▼                                                              │
+   ResultRenderer / AnimalTable  ◄─── animales base cargados ────────┘
+       │
+       ▼ click en fila Animal
+   useDbpediaEnrich → es.dbpedia.org/sparql (Lookup API + SPARQL)
+       │
+       ▼
+   AnimalDrawer (abstract + thumbnail + wikiPage)
 ```
+
+## Principio de diseño: zero hardcoding de dominio
+
+Toda la información sobre la ontología (clases, propiedades, relaciones, valores)
+se descubre en tiempo de ejecución interrogando el n3 Store. No existen mapas,
+constantes ni enumeraciones de dominio en el código fuente. Si la ontología cambia,
+la aplicación se adapta sola.
+
+Ver [`search-architecture.md`](./search-architecture.md) para el detalle completo.
