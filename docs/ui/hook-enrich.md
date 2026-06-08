@@ -1,4 +1,4 @@
-# Hooks: useOntology y useDbpediaEnrich
+# Hooks: useOntology, useOntologySchema, useEntityMap, useDbpediaEnrich
 
 ## `useOntology`
 
@@ -6,8 +6,7 @@
 
 ### Propósito
 
-Expone el `Store` de n3 a los componentes React. Garantiza que el parseo del
-RDF/XML ocurra una única vez por sesión, aunque múltiples componentes usen el hook.
+Expone el `Store` de n3 a los componentes React. Garantiza que el parseo del RDF/XML ocurra una única vez por sesión, aunque múltiples componentes usen el hook.
 
 ### Singleton a nivel de módulo
 
@@ -16,16 +15,15 @@ let _store: Store | null = null;
 let _loadPromise: Promise<Store> | null = null;
 
 function getOrLoadStore(): Promise<Store> {
-  if (_store) return Promise.resolve(_store);     // ya cargado
+  if (_store) return Promise.resolve(_store);
   if (!_loadPromise) {
     _loadPromise = loadOntology().then(s => { _store = s; return s; });
   }
-  return _loadPromise;  // en curso: reutiliza la misma promesa
+  return _loadPromise;  // reutiliza la misma promesa si ya está en curso
 }
 ```
 
-El patrón de `_loadPromise` evita lanzar múltiples fetch simultáneos si varios
-componentes montan al mismo tiempo (incluido React StrictMode que monta dos veces).
+El patrón de `_loadPromise` evita lanzar múltiples fetch simultáneos (incluido React StrictMode que monta dos veces).
 
 ### Interfaz
 
@@ -38,41 +36,99 @@ const { store, loading, error } = useOntology();
 
 ---
 
+## `useOntologySchema`
+
+**Archivo:** `src/hooks/useOntologySchema.ts`
+
+### Propósito
+
+Dado el `Store`, descubre dinámicamente toda la estructura de la ontología: clases, propiedades datatype (con valores distintos), object properties (relaciones) y propiedad de etiqueta por clase. Este schema es la base de todo el sistema de búsqueda.
+
+### Singleton a nivel de módulo
+
+Igual patrón que `useOntology`: la promesa de `buildOntologySchema` se crea solo una vez.
+
+### Interfaz
+
+```typescript
+const { schema, loading, error } = useOntologySchema(store);
+// schema: OntologySchema | null
+//   schema.classes  → Map<localName, ClassSchema>
+//   schema.relations → RelationEdge[]
+//   schema.adjacency → Map<fromClass, RelationEdge[]>  — para BFS de joins
+// loading: boolean
+// error: string | null
+```
+
+### Qué descubre
+
+| Elemento | Cómo se descubre |
+|----------|----------------|
+| Clases | `?i rdf:type owl:NamedIndividual . ?i rdf:type ?class` |
+| Props literales | Predicados con objetos literales en instancias de cada clase |
+| Valores distintos | `SELECT DISTINCT ?val` por cada (clase, predicado) |
+| Relations | Predicados con objetos IRI cuyo tipo es otra clase vet: |
+| Label property | Heurística: `vet:nombre{Clase}` → `vet:nombre` → `descripcion` → `tipo` → primera prop |
+
+---
+
+## `useEntityMap`
+
+**Archivo:** `src/hooks/useEntityMap.ts`
+
+### Propósito
+
+Construye el `EntityMap` a partir del schema descubierto. Indexa términos de búsqueda tanto a nombres de clases como a valores concretos de propiedades, con stemming español.
+
+### Interfaz
+
+```typescript
+const entityMap = useEntityMap(store, schema);
+// entityMap.termToClass          → "enfermedad" → "Enfermedad"
+// entityMap.termToPropertyValue  → "otitis" → [{className:"Enfermedad", prop:"nombreEnfermedad", value:"Otitis"}]
+// entityMap.classNames           → Set<string> con todas las clases descubiertas
+```
+
+### Construcción
+
+Para cada `ClassSchema`:
+1. **Términos de clase** (sin hardcoding): split camelCase del localName + lowercase + plural + stems.
+   - "ExamenMedico" → ["examen", "medico", "examen medico", stems de cada uno]
+2. **Valores de propiedades**: todos los `distinctValues` de todas las props datatype → `termToPropertyValue`.
+   - "Otitis" → registra "otitis", stem("otitis"), en `termToPropertyValue` → `{Enfermedad, nombreEnfermedad, "Otitis"}`
+   - "Macho" → registra "macho", "mach", en `termToPropertyValue` → `{Animal, sexo, "Macho"}`
+
+Retorna `EMPTY_ENTITY_MAP` hasta que `store` y `schema` estén disponibles.
+
+---
+
 ## `useDbpediaEnrich`
 
 **Archivo:** `src/hooks/useDbpediaEnrich.ts`
 
 ### Propósito
 
-Dado un `Individual` de la ontología local, obtiene de DBpedia los datos de
-enriquecimiento vía SPARQL y los expone como filas de binding crudas.
-La consulta es **lazy** (solo cuando el drawer se abre) y **cacheada** en sesión.
+Dado un `Individual` de la ontología local, obtiene de DBpedia los datos de enriquecimiento vía SPARQL y los expone como filas de binding crudas. La consulta es **lazy** (solo cuando el drawer se abre) y **cacheada** en sesión.
 
 ### Interfaz
 
 ```typescript
 const { enriched, loading } = useDbpediaEnrich(animal)
 // enriched: Record<string, string>[] | null
-//   Filas de binding SPARQL directas — sin objeto intermedio tipado.
-//   Los nombres de variable coinciden con el SELECT del query DBpedia:
-//     enriched[0].abstract   → descripción en español
-//     enriched[0].thumbnail  → URL de imagen (opcional)
-//     enriched[0].page       → URL de Wikipedia (opcional)
+//   enriched[0].abstract   → descripción en español (o inglés como fallback)
+//   enriched[0].thumbnail  → URL de imagen (opcional)
+//   enriched[0].page       → URL de Wikipedia (opcional)
 // loading: boolean
 ```
-
-`enriched` es `null` si DBpedia no devuelve resultados, el fetch falla,
-o la raza/especie no tiene slug en `dbpediaMaps.ts`.
 
 ### Caché a nivel de módulo
 
 ```typescript
 const _cache = new Map<string, Record<string, string>[]>()
-// clave: "especie|raza" — e.g. "Canino|Pug"
+// clave: "especie|raza" — e.g. "Perro|Pug"
 ```
 
-La caché persiste durante toda la sesión. Si el mismo par ya fue consultado,
-el resultado se devuelve inmediatamente sin hacer fetch.
+La caché persiste durante toda la sesión.
 
 ### Flujo de datos
 
@@ -80,7 +136,7 @@ el resultado se devuelve inmediatamente sin hacer fetch.
 Individual (especie, raza)
      │
      ▼
-resolveAnimalSlug()  →  slug DBpedia (e.g. "Pug")
+resolveSlugViaLookup(raza || especie)  → slug DBpedia vía Lookup API
      │
      ▼
 buildAnimalQuery(slug)  →  SPARQL SELECT ?abstract ?thumbnail ?page
@@ -92,8 +148,7 @@ queryDBpedia()  →  Record<string, string>[]
 useDbpediaEnrich  →  enriched[0].abstract / .thumbnail / .page
 ```
 
-No hay objetos intermedios como `DbpediaAnimalInfo`; el componente que consume
-el hook lee directamente los valores de binding por nombre de variable.
+Ya no se usan mapas estáticos (`dbpediaMaps.ts` fue eliminado). La resolución de slug es completamente dinámica. Ver [../dbpedia/mapas-uri.md](../dbpedia/mapas-uri.md).
 
 ### Flag de cancelación
 

@@ -1,16 +1,11 @@
-// Renders SPARQL query results dynamically based on the query type.
-// Relational queries show a three-column table (subject → relation → object).
-// Single-class queries derive columns from the result row keys.
-
-import type { OntologyClass } from '../utils/entityDetector'
 import { type Language, useTranslations } from '../i18n/translations'
 
 export interface QueryMeta {
+  searchMode: 'entity' | 'content' | 'multi-entity' | 'fallback'
+  entityContexts: import('../utils/queryParser').EntityContext[]
+  primaryType: string | null
+  secondaryType: string | null
   isRelational: boolean
-  primaryType: OntologyClass | null
-  secondaryType: OntologyClass | null
-  primaryTerm: string
-  secondaryTerm: string | null
 }
 
 interface ResultRendererProps {
@@ -31,45 +26,17 @@ function cellValue(val: string | undefined): string {
   return val.startsWith('http') ? shortUri(val) : val
 }
 
-// Columns to skip in generic rendering (URIs shown in other columns)
-const SKIP_KEYS = new Set(['instance', 'subject', 'object', 'enf', 'servicio'])
-
-const COLUMN_LABELS: Record<string, string> = {
-  name:                 'Nombre',
-  nombreAnimal:         'Nombre',
-  nombreEnfermedad:     'Enfermedad',
-  nombreMedicamento:    'Medicamento',
-  tipoMedicamento:      'Tipo',
-  dosisMedicamento:     'Dosis',
-  viaAdministracion:    'Vía de administración',
-  descripcionServicio:  'Servicio clínico',
-  tipoEnfermedad:       'Tipo enfermedad',
-  nivelGravedad:        'Gravedad',
-  sintomas:             'Síntomas',
-  descripcionEnfermedad:'Descripción',
-  especie:              'Especie',
-  raza:                 'Raza',
-  sexo:                 'Sexo',
-  edad:                 'Edad',
-  peso:                 'Peso',
-  color:                'Color',
-  telefono:             'Teléfono',
-  especialidad:         'Especialidad',
-  fecha:                'Fecha',
-  diagnosticoInicial:   'Diagnóstico inicial',
-  sintomasReportados:   'Síntomas reportados',
-  tipoVacuna:           'Tipo vacuna',
-  dosisVacunacion:      'Dosis',
-  tipoTratamiento:      'Tipo tratamiento',
-  duracion:             'Duración',
-  tipoExamen:           'Tipo examen',
-  resultado:            'Resultado',
-  tipoCirugia:          'Tipo cirugía',
-  nombre:               'Nombre',
-}
+const SKIP_KEYS = new Set(['instance', 'subject', 'object', 'enf', 'servicio', 'labelPred'])
 
 function colLabel(key: string): string {
-  return COLUMN_LABELS[key] ?? key
+  if (/^var\d+$/.test(key)) return key
+  const stripped = key.replace(/^var\d+_/, '')
+  return stripped
+    .replace(/([A-Z])/g, ' $1')
+    .trim()
+    .split(/\s+/)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ')
 }
 
 export default function ResultRenderer({ results, queryMeta, lang }: ResultRendererProps) {
@@ -79,6 +46,70 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
     return <p className="vet-state">{t.noResultsSearch}</p>
   }
 
+  // ── Content search mode ───────────────────────────────────────────────────
+  if (queryMeta.searchMode === 'content') {
+    return (
+      <div className="vet-table-wrap">
+        <table className="vet-table">
+          <thead>
+            <tr>
+              <th>{'Tipo'}</th>
+              <th>{'Nombre'}</th>
+              <th>{'Campo'}</th>
+              <th>{'Valor encontrado'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {results.map((r, i) => (
+              <tr key={i}>
+                <td>{r.className ?? '—'}</td>
+                <td>{r.labelVal ?? shortUri(r.instance ?? '')}</td>
+                <td>{r.matchProp ? colLabel(shortUri(r.matchProp)) : '—'}</td>
+                <td>{r.matchVal ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="vet-table-footer">
+          {results.length} {results.length !== 1 ? t.resultCountPlural : t.resultCount}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Multi-entity mode ─────────────────────────────────────────────────────
+  if (queryMeta.searchMode === 'multi-entity' && queryMeta.entityContexts.length >= 2) {
+    const contexts = queryMeta.entityContexts
+    return (
+      <div className="vet-table-wrap">
+        <table className="vet-table">
+          <thead>
+            <tr>
+              {contexts.map((ctx, i) => (
+                <th key={i}>{ctx.className}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {results.map((r, i) => (
+              <tr key={i}>
+                {contexts.map((_, idx) => (
+                  <td key={idx}>
+                    {r[`var${idx}Name`] ?? cellValue(r[`var${idx}`])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="vet-table-footer">
+          {results.length} {results.length !== 1 ? t.resultCountPlural : t.resultCount}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Legacy relational ─────────────────────────────────────────────────────
   if (queryMeta.isRelational && queryMeta.primaryType && queryMeta.secondaryType) {
     return (
       <div className="vet-table-wrap">
@@ -86,7 +117,7 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
           <thead>
             <tr>
               <th>{queryMeta.primaryType}</th>
-              <th>{t.colRelation}</th>
+              <th>{t.colRelation ?? 'Relación'}</th>
               <th>{queryMeta.secondaryType}</th>
             </tr>
           </thead>
@@ -94,9 +125,7 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
             {results.map((r, i) => (
               <tr key={i}>
                 <td>{r.subjectName ?? cellValue(r.subject)}</td>
-                <td>
-                  <span className="vet-pill">→</span>
-                </td>
+                <td><span className="vet-pill">→</span></td>
                 <td>{r.objectName ?? cellValue(r.object)}</td>
               </tr>
             ))}
@@ -109,8 +138,8 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
     )
   }
 
-  // Single-class or fallback: derive columns from the first result row
-  const columns = Object.keys(results[0]).filter(k => !SKIP_KEYS.has(k))
+  // ── Single-class / fallback ───────────────────────────────────────────────
+  const columns = Object.keys(results[0]).filter(k => !SKIP_KEYS.has(k) && !/^var\d+$/.test(k))
 
   return (
     <div className="vet-table-wrap">

@@ -60,16 +60,22 @@ Variables devueltas: `abstract`, `thumbnail` (opcional), `page` (opcional).
 Igual que el de animales pero sin `?thumbnail`.
 Variables devueltas: `abstract`, `page` (opcional).
 
-## Flujo sin intermediarios
+## Flujo completo con resolución dinámica de slug
 
 ```
-SPARQL query
+getAnimalInfo(especie, raza)
+     │
+     ▼ resolveSlugViaLookup(raza || especie)
+lookup.dbpedia.org/api/search?query=...
+     │  → "http://dbpedia.org/resource/Pug"
+     ▼  → slug = "Pug"
+buildAnimalQuery(slug) → SPARQL SELECT
      │  fetch GET es.dbpedia.org/sparql
      ▼
 { results: { bindings: [ { abstract: { value: "..." }, ... } ] } }
      │  Object.fromEntries(...)
      ▼
-Record<string, string>[]   ← resultado directo
+Record<string, string>[]
      │
      ▼
 useDbpediaEnrich → enriched[0].abstract / .thumbnail / .page
@@ -78,10 +84,8 @@ useDbpediaEnrich → enriched[0].abstract / .thumbnail / .page
 AnimalDrawer (muestra valores directamente desde el binding row)
 ```
 
-No hay tipos intermedios (`DbpediaAnimalInfo`, `SparqlBinding`).
-El componente lee los valores por nombre de variable SPARQL.
+No hay objetos intermedios (`DbpediaAnimalInfo`, `SparqlBinding`).
 
 ## Resolución de slug
 
-Los slugs DBpedia (ej. `"Pug"`, `"Persian_cat"`) se obtienen de `dbpediaMaps.ts`
-en base a la especie/raza del animal. Ver [mapas-uri.md](./mapas-uri.md).
+Los slugs DBpedia se obtienen dinámicamente mediante la **DBpedia Lookup API** (`lookup.dbpedia.org`), no de mapas estáticos. Ver [mapas-uri.md](./mapas-uri.md) para detalles.

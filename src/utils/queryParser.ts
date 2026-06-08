@@ -1,7 +1,6 @@
-// Parses a raw search string into structured query intent.
 import { StemmerEs, StopwordsEs, TokenizerEs } from '@nlpjs/lang-es'
-import type { EntityMap } from './entityDetector'
-import { detectEntityType, resolveSpeciesValue, resolveRazaValue } from './entityDetector'
+import type { ClassSchema, OntologySchema } from '../services/schemaDiscovery'
+import type { EntityMap, PropertyValueMatch } from './entityDetector'
 import { searchTermTranslations } from '../i18n/translations'
 
 const stemmer = new StemmerEs()
@@ -9,180 +8,231 @@ stemmer.stopwords = new StopwordsEs()
 const tokenizer = new TokenizerEs()
 const stopwords = new StopwordsEs()
 
+export type MatchType = 'exact' | 'contains' | 'numeric'
+
+export interface PropertyFilter {
+  propertyLocalName: string
+  value: string
+  matchType: MatchType
+}
+
+export interface EntityContext {
+  className: string
+  propertyFilters: PropertyFilter[]
+}
+
 export interface ParsedQuery {
+  rawInput: string
+  searchMode: 'entity' | 'content' | 'multi-entity' | 'fallback'
+  entityContexts: EntityContext[]
   terms: string[]
   stemmed: string[]
-  isRelational: boolean
-  primaryTerm: string
-  secondaryTerm: string | null
-  rawInput: string
-  filters: Record<string, string>  // edad, sexo, raza, especie detectados
 }
 
-// Detecta edad: "5 años", "3 años", número suelto
-function extractAge(tokens: string[]): { age: string | null; remaining: string[] } {
-  const remaining = [...tokens]
-  for (let i = 0; i < remaining.length - 1; i++) {
-    if (/^\d+$/.test(remaining[i]) && (remaining[i + 1] === 'años' || remaining[i + 1] === 'año')) {
-      const age = remaining[i]
-      remaining.splice(i, 2)
-      return { age, remaining }
-    }
-  }
-  for (let i = 0; i < remaining.length; i++) {
-    if (/^\d+$/.test(remaining[i])) {
-      const age = remaining[i]
-      remaining.splice(i, 1)
-      return { age, remaining }
-    }
-  }
-  return { age: null, remaining }
-}
-
-// Detecta sexo: "macho", "hembra" y sus variantes/plurales
-function extractSexo(tokens: string[]): { sexo: string | null; remaining: string[] } {
-  const sexoMap: Record<string, string> = {
-    macho: 'Macho', machos: 'Macho',
-    hembra: 'Hembra', hembras: 'Hembra',
-    masculino: 'Macho', femenino: 'Hembra',
-  }
-  const remaining = [...tokens]
-  for (let i = 0; i < remaining.length; i++) {
-    const val = sexoMap[remaining[i]]
-    if (val) {
-      remaining.splice(i, 1)
-      return { sexo: val, remaining }
-    }
-  }
-  return { sexo: null, remaining }
-}
-
-// Detecta raza de múltiples palabras: "golden retriever", "maine coon"
-// Prueba combinaciones de términos consecutivos (más largo primero)
-function extractRaza(
-  tokens: string[],
-  entityMap: EntityMap,
-): { raza: string | null; remaining: string[] } {
-  for (let len = tokens.length; len >= 1; len--) {
-    for (let start = 0; start <= tokens.length - len; start++) {
-      const phrase = tokens.slice(start, start + len).join(' ')
-      const razaVal = resolveRazaValue(phrase, entityMap)
-      if (razaVal) {
-        const remaining = [...tokens.slice(0, start), ...tokens.slice(start + len)]
-        return { raza: razaVal, remaining }
-      }
-    }
-  }
-  return { raza: null, remaining: tokens }
-}
-
-// Detecta especie de múltiples palabras
-function extractEspecie(
-  tokens: string[],
-  entityMap: EntityMap,
-): { especie: string | null; remaining: string[] } {
-  for (let len = tokens.length; len >= 1; len--) {
-    for (let start = 0; start <= tokens.length - len; start++) {
-      const phrase = tokens.slice(start, start + len).join(' ')
-      const especieVal = resolveSpeciesValue(phrase, entityMap)
-      if (especieVal) {
-        const remaining = [...tokens.slice(0, start), ...tokens.slice(start + len)]
-        return { especie: especieVal, remaining }
-      }
-    }
-  }
-  return { especie: null, remaining: tokens }
-}
-
-// Intenta detectar una instancia compuesta (nombre de enfermedad, medicamento, etc.)
-function findLongestInstanceMatch(
-  terms: string[],
-  entityMap: EntityMap,
-): { primaryTerm: string; remainingTerms: string[] } | null {
-  for (let len = terms.length; len >= 2; len--) {
-    for (let start = 0; start <= terms.length - len; start++) {
-      const phrase = terms.slice(start, start + len).join(' ')
-      const cls = detectEntityType(phrase, entityMap)
-      if (cls && cls !== 'Animal') {
-        // Solo para instancias no-Animal (enfermedades, medicamentos, etc.)
-        const remaining = [...terms.slice(0, start), ...terms.slice(start + len)]
-        return { primaryTerm: phrase, remainingTerms: remaining }
-      }
+function findNumericProp(cls: ClassSchema): string | null {
+  for (const prop of cls.datatypeProps) {
+    if (
+      prop.distinctValues.length > 0 &&
+      prop.distinctValues.every(v => !isNaN(Number(v)) && v.trim() !== '')
+    ) {
+      return prop.localName
     }
   }
   return null
 }
 
-// Traduce cada palabra del input EN/PT → ES antes de procesar
+function extractAge(tokens: string[]): { age: string | null; remaining: string[] } {
+  const rem = [...tokens]
+  for (let i = 0; i < rem.length - 1; i++) {
+    if (/^\d+$/.test(rem[i]) && (rem[i + 1] === 'años' || rem[i + 1] === 'año' || rem[i + 1] === 'years' || rem[i + 1] === 'year')) {
+      const age = rem[i]
+      rem.splice(i, 2)
+      return { age, remaining: rem }
+    }
+  }
+  for (let i = 0; i < rem.length; i++) {
+    if (/^\d+$/.test(rem[i])) {
+      const age = rem[i]
+      rem.splice(i, 1)
+      return { age, remaining: rem }
+    }
+  }
+  return { age: null, remaining: rem }
+}
+
+// Detecta sexo en español, inglés y portugués
+function extractSexo(tokens: string[]): { sexo: string | null; remaining: string[] } {
+  const sexoMap: Record<string, string> = {
+    macho: 'Macho', machos: 'Macho', masculino: 'Macho',
+    hembra: 'Hembra', hembras: 'Hembra', femenino: 'Hembra',
+    male: 'Macho', female: 'Hembra',
+    macho_pt: 'Macho', fêmea: 'Hembra', femea: 'Hembra',
+  }
+  const rem = [...tokens]
+  for (let i = 0; i < rem.length; i++) {
+    const val = sexoMap[rem[i]]
+    if (val) {
+      rem.splice(i, 1)
+      return { sexo: val, remaining: rem }
+    }
+  }
+  return { sexo: null, remaining: rem }
+}
+
+function getOrCreate(map: Map<string, EntityContext>, className: string): EntityContext {
+  let ctx = map.get(className)
+  if (!ctx) {
+    ctx = { className, propertyFilters: [] }
+    map.set(className, ctx)
+  }
+  return ctx
+}
+
+function addFilter(ctx: EntityContext, localName: string, value: string, matchType: MatchType) {
+  const dup = ctx.propertyFilters.some(
+    f => f.propertyLocalName === localName && f.value === value
+  )
+  if (!dup) ctx.propertyFilters.push({ propertyLocalName: localName, value, matchType })
+}
+
+interface PhraseMatch {
+  type: 'value'
+  matches: PropertyValueMatch[]
+  start: number
+  len: number
+}
+interface ClassMatch {
+  type: 'class'
+  className: string
+  start: number
+  len: number
+}
+type TokenMatch = PhraseMatch | ClassMatch
+
+function longestMatch(tokens: string[], map: EntityMap): TokenMatch | null {
+  function lookupPhrase(phrase: string): PropertyValueMatch[] | null {
+    const lower = phrase.toLowerCase()
+    let hits = map.termToPropertyValue.get(lower)
+    if (!hits && !lower.includes(' ')) {
+      const s = stemmer.tokenizeAndStem(lower, false)[0]
+      if (s) hits = map.termToPropertyValue.get(s)
+    }
+    return hits?.length ? hits : null
+  }
+
+  function lookupClass(phrase: string): string | null {
+    const lower = phrase.toLowerCase()
+    let cls = map.termToClass.get(lower)
+    if (!cls && !lower.includes(' ')) {
+      const s = stemmer.tokenizeAndStem(lower, false)[0]
+      if (s) cls = map.termToClass.get(s)
+    }
+    return cls ?? null
+  }
+
+  for (let len = tokens.length; len >= 1; len--) {
+    for (let start = 0; start <= tokens.length - len; start++) {
+      const phrase = tokens.slice(start, start + len).join(' ')
+      const valueMatches = lookupPhrase(phrase)
+      if (valueMatches) return { type: 'value', matches: valueMatches, start, len }
+      const clsName = lookupClass(phrase)
+      if (clsName) return { type: 'class', className: clsName, start, len }
+    }
+  }
+  return null
+}
+
+// Traduce términos EN/PT → ES antes de procesar
 function translateInput(input: string): string {
   const lower = input.toLowerCase().trim()
-  // Primero intenta frases completas (ej: "golden retriever")
   if (searchTermTranslations[lower]) return searchTermTranslations[lower]
-  // Luego palabra por palabra
   return lower.split(' ').map(word => searchTermTranslations[word] ?? word).join(' ')
 }
 
-export function parseQuery(rawInput: string, entityMap?: EntityMap): ParsedQuery {
+export function parseQuery(
+  rawInput: string,
+  entityMap: EntityMap,
+  schema: OntologySchema | null,
+): ParsedQuery {
   const translated = translateInput(rawInput)
   const lower = translated.toLowerCase().trim()
   const allTokens = tokenizer.tokenize(lower, true)
   const terms = stopwords.removeStopwords(allTokens)
   const stemmed = stemmer.tokenizeAndStem(lower, false)
-  const filters: Record<string, string> = {}
 
-  // ── Paso 1: extraer atributos simples (edad, sexo incluyendo plurales/variantes) ──
-  let workingTokens = [...allTokens]
-
+  // Step 1 — Extraer edad y sexo (patrones de lenguaje, no ontología)
+  let workingTokens = stopwords.removeStopwords([...allTokens]).filter(t => t.length > 0)
   const { age, remaining: afterAge } = extractAge(workingTokens)
-  if (age) { filters.edad = age; workingTokens = afterAge }
-
+  workingTokens = afterAge
   const { sexo, remaining: afterSexo } = extractSexo(workingTokens)
-  if (sexo) { filters.sexo = sexo; workingTokens = afterSexo }
+  workingTokens = afterSexo
 
-  // Tokens limpios sin stopwords para continuar
-  let cleanTerms = stopwords.removeStopwords(workingTokens).filter(t => t.length > 0)
+  // Step 2 — Greedy longest-match para detectar entidades y valores de propiedades
+  const contextMap = new Map<string, EntityContext>()
+  let remaining = [...workingTokens]
 
-  // ── Paso 2: extraer raza y especie si hay entityMap ──────────────────────
-  if (entityMap) {
-    const { raza, remaining: afterRaza } = extractRaza(cleanTerms, entityMap)
-    if (raza) { filters.raza = raza; cleanTerms = afterRaza }
+  while (remaining.length > 0) {
+    const match = longestMatch(remaining, entityMap)
+    if (!match) break
 
-    const { especie, remaining: afterEspecie } = extractEspecie(cleanTerms, entityMap)
-    if (especie) { filters.especie = especie; cleanTerms = afterEspecie }
+    if (match.type === 'value') {
+      for (const m of match.matches) {
+        const ctx = getOrCreate(contextMap, m.className)
+        addFilter(ctx, m.propertyLocalName, m.canonicalValue, 'exact')
+      }
+    } else {
+      getOrCreate(contextMap, match.className)
+    }
+
+    remaining = [
+      ...remaining.slice(0, match.start),
+      ...remaining.slice(match.start + match.len),
+    ]
   }
 
-  // ── Paso 3: si hay filtros de Animal (especie, raza, sexo o edad) ─────────
-  if (filters.especie || filters.raza || filters.sexo || filters.edad) {
-    // Si no quedan términos limpios de texto, es una búsqueda pura de atributos de Animal
-    if (cleanTerms.length === 0) {
-      return {
-        terms,
-        stemmed,
-        isRelational: false,
-        primaryTerm: filters.especie ?? filters.raza ?? 'animales', // Usa la entidad detectada o el genérico
-        secondaryTerm: null,
-        rawInput,
-        filters,
+  // Step 3 — Asignar sexo al contexto Animal si existe
+  if (sexo) {
+    const animalCtx = getOrCreate(contextMap, 'Animal')
+    addFilter(animalCtx, 'sexo', sexo, 'exact')
+  }
+
+  // Step 4 — Asignar edad numérica al primer contexto con propiedad numérica
+  if (age !== null && schema) {
+    let ageTarget: EntityContext | null = null
+    let agePropLocalName: string | null = null
+
+    for (const [, ctx] of contextMap) {
+      const cls = schema.classes.get(ctx.className)
+      const numProp = cls ? findNumericProp(cls) : null
+      if (numProp) {
+        ageTarget = ctx
+        agePropLocalName = numProp
+        break
       }
     }
-    // Si quedan términos (ej. "gatos con rabia"), no sale directo aquí para evaluar si es una relación en Paso 4
-  }
 
-  // ── Paso 4: detectar instancia compuesta no-Animal (Leucemia Felina, etc.) ─
-  if (entityMap && cleanTerms.length >= 2) {
-    const instanceMatch = findLongestInstanceMatch(cleanTerms, entityMap)
-    if (instanceMatch) {
-      const { primaryTerm, remainingTerms } = instanceMatch
-      const isRelational = remainingTerms.length > 0
-      const secondaryTerm = remainingTerms.length > 0 ? remainingTerms[0] : null
-      return { terms, stemmed, isRelational, primaryTerm, secondaryTerm, rawInput, filters }
+    // Si no hay contexto aún pero hay edad → crear contexto Animal
+    if (!ageTarget) {
+      ageTarget = getOrCreate(contextMap, 'Animal')
+      agePropLocalName = 'edad'
+    }
+
+    if (ageTarget && agePropLocalName) {
+      addFilter(ageTarget, agePropLocalName, age, 'numeric')
     }
   }
 
-  // ── Paso 5: comportamiento original ──────────────────────────────────────
-  const isRelational = cleanTerms.length >= 2
-  const primaryTerm  = cleanTerms[0] ?? lower
-  const secondaryTerm = cleanTerms.length >= 2 ? cleanTerms[1] : null
+  // Step 5 — Determinar searchMode
+  const contexts = Array.from(contextMap.values())
+  let searchMode: ParsedQuery['searchMode']
 
-  return { terms, stemmed, isRelational, primaryTerm, secondaryTerm, rawInput, filters }
+  if (contexts.length === 0) {
+    searchMode = rawInput.trim().length > 0 ? 'content' : 'fallback'
+  } else if (contexts.length >= 2) {
+    searchMode = 'multi-entity'
+  } else {
+    searchMode = 'entity'
+  }
+
+  return { rawInput, searchMode, entityContexts: contexts, terms, stemmed }
 }

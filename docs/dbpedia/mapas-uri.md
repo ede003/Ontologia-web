@@ -1,100 +1,92 @@
-# Mapas de URI: raza / especie / enfermedad → DBpedia
+# Resolución de URIs DBpedia
 
-**Archivo fuente:** `src/maps/dbpediaMaps.ts`
+**Archivo fuente:** `src/repositories/dbpediaRepository.ts`
 
-## Por qué mapas estáticos
+## Enfoque actual: Lookup API dinámica
 
-Los valores en la ontología son nombres en español con ortografía específica del
-grupo ("Dermaitis Alergica", "Bulldog Fránces"). DBpedia usa slugs en inglés con
-guiones bajos ("French_Bulldog").
+A partir del refactoring de junio 2026, los mapas estáticos `RAZA_MAP`, `ESPECIE_MAP` y `ENFERMEDAD_MAP` (que existían en `src/maps/dbpediaMaps.ts`) han sido eliminados. En su lugar, los slugs de DBpedia se resuelven dinámicamente en tiempo de ejecución usando la **DBpedia Lookup API**.
 
-Una búsqueda dinámica por `rdfs:label` con `contains(lcase(?label), ...)` falló
-en `dbpedia.org/sparql` por falta de índices de texto. La búsqueda por URI directa
-requiere conocer el slug exacto de antemano.
+## DBpedia Lookup API
 
-Los slugs fueron **verificados manualmente** contra `es.dbpedia.org/sparql` con:
-```bash
-curl "https://es.dbpedia.org/sparql?query=SELECT ?a WHERE { <http://dbpedia.org/resource/SLUG> dbo:abstract ?a . FILTER(lang(?a)='es') } LIMIT 1&format=json"
+```
+Endpoint:  https://lookup.dbpedia.org/api/search
+Método:    GET
+Params:    query=<término url-encoded>&lang=es&maxResults=1&format=json
+Timeout:   5 segundos (AbortController)
 ```
 
-## Mapa de razas (`RAZA_MAP`)
+La API devuelve el recurso DBpedia más relevante para el término de búsqueda:
 
-| Clave (lowercase) | Slug DBpedia | Verificado |
-|-------------------|-------------|-----------|
-| `pug` | `Pug` | ✓ |
-| `poodle` | `Poodle` | ✓ |
-| `beagle` | `Beagle` | ✓ |
-| `boxer` | `Boxer_(dog)` | ✓ |
-| `rottweiler` | `Rottweiler` | ✓ |
-| `pastor alemán` | `German_Shepherd` | ✓ |
-| `golden retriever` | `Golden_Retriever` | ✓ |
-| `bulldog fránces` | `French_Bulldog` | ✓ |
-| `bulldog francés` | `French_Bulldog` | ✓ |
-| `persa` | `Persian_cat` | ✓ |
-| `angora` | `Turkish_Angora` | ✓ |
-| `bengala` | `Bengal_cat` | ✓ |
-| `sphynx` | `Sphynx_cat` | ✓ |
-| `loro` | `Parrot` | ✓ |
-| `mestizo` | `null` | — sin artículo útil |
-| `felino` | `null` | — demasiado genérico |
-| `canino` | `null` | — demasiado genérico |
-
-## Mapa de especies (`ESPECIE_MAP`)
-
-Se usa como fallback cuando la raza es `null` o no está en el mapa.
-
-| Clave | Slug DBpedia |
-|-------|-------------|
-| `felino` | `Cat` |
-| `canino` | `Dog` |
-| `gato` | `Cat` |
-| `loro australiano` | `Budgerigar` |
-
-## Mapa de enfermedades (`ENFERMEDAD_MAP`)
-
-Las claves son los valores exactos del campo `nombreEnfermedad` en la ontología,
-en minúsculas. El código intenta coincidencia exacta primero, luego subcadena.
-
-| nombreEnfermedad (ontología) | Slug DBpedia | Verificado |
-|-----------------------------|-------------|-----------|
-| `otitis` | `Otitis` | ✓ |
-| `otitis cronica` | `Otitis` | ✓ |
-| `otitis externa` | `Otitis` | ✓ |
-| `otomicosis` | `Otomycosis` | ✓ |
-| `insuficiencia renal` | `Kidney_failure` | ✓ |
-| `dermaitis alergica` | `Dermatitis` | ✓ |
-| `dermatitis bacteriana` | `Dermatitis` | ✓ |
-| `parvovirus` | `Parvovirus` | ✓ |
-| `conjuntivitis` | `Conjunctivitis` | ✓ |
-| `leucemia felina` | `Feline_leukemia_virus` | ✓ |
-| `cistitis idiopática` | `Cystitis` | ✓ |
-| `úlcera corneal` | `Corneal_ulcer` | ✓ |
-| `gastroenteritis parasitaria` | `Gastroenteritis` | ✓ |
-| `sarna sarcóptica` | `Scabies` | ✓ |
-| `traqueobronquitis` | `Bronchitis` | ✓ |
-| `diabetes mellitus` | `Diabetes` | ✓ |
-
-## Lógica de resolución
-
-```typescript
-function resolveSlug(raza: string, especie: string): string | null {
-  const razaKey = raza.toLowerCase().trim();
-  if (razaKey in RAZA_MAP) return RAZA_MAP[razaKey] ?? null;
-  //   ↑ null explícito = sabemos que no hay artículo útil, no hacer fetch
-
-  const especieKey = especie.toLowerCase().trim();
-  if (especieKey in ESPECIE_MAP) return ESPECIE_MAP[especieKey] ?? null;
-
-  return null; // término desconocido = no hacer fetch
+```json
+{
+  "docs": [{
+    "resource": ["http://dbpedia.org/resource/Golden_Retriever"],
+    ...
+  }]
 }
 ```
 
-Para enfermedades se usa coincidencia por subcadena como fallback:
+El slug se extrae del último segmento de la URI:
 ```typescript
-const slug = ENFERMEDAD_MAP[key] ??
-  Object.entries(ENFERMEDAD_MAP).find(([k]) => key.includes(k))?.[1] ??
-  null;
+resource.split('/').pop()  // "Golden_Retriever"
 ```
 
-Esto permite que "Dermaitis Alergica" encuentre la clave `'dermatitis'` aunque
-no sea una coincidencia exacta.
+## Función `resolveSlugViaLookup`
+
+```typescript
+async function resolveSlugViaLookup(term: string): Promise<string | null> {
+  const url = `${LOOKUP_API}?query=${encodeURIComponent(term)}&lang=es&maxResults=1&format=json`
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(5000), ... })
+    const data = await res.json()
+    const resource = data?.docs?.[0]?.resource?.[0]
+    return resource ? resource.split('/').pop() : capitalizeSlug(term)
+  } catch {
+    return capitalizeSlug(term)  // fallback en caso de error de red
+  }
+}
+```
+
+## Fallback: `capitalizeSlug`
+
+Si la Lookup API no devuelve resultados o la red falla, se genera un slug directamente del término:
+
+```typescript
+function capitalizeSlug(term: string): string {
+  return term.trim().split(/\s+/)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join('_')
+}
+// "golden retriever" → "Golden_Retriever"
+// "otitis"           → "Otitis"
+```
+
+Este fallback garantiza que siempre se intenta la consulta SPARQL a DBpedia, aunque el slug pueda no existir.
+
+## Flujo de resolución
+
+```
+getAnimalInfo(especie, raza)
+       │
+       ├─ term = raza || especie
+       ▼
+resolveSlugViaLookup(term)
+       ├─ éxito → slug desde Lookup API (ej. "Pug")
+       └─ fallo/vacío → capitalizeSlug(term) (ej. "Pug")
+       │
+       ▼
+buildAnimalQuery(slug) → SPARQL SELECT
+       │
+       ▼
+queryDBpedia() → enriched[]
+```
+
+## Por qué se eliminaron los mapas estáticos
+
+Los mapas anteriores (`RAZA_MAP`, `ESPECIE_MAP`, `ENFERMEDAD_MAP`) eran listas de razas, especies y enfermedades específicas de la ontología con sus slugs verificados manualmente en DBpedia. El problema:
+
+1. **Acoplamiento de datos**: cualquier nuevo animal o enfermedad en la ontología requería actualizar el mapa de código.
+2. **Inconsistencia**: el mapa solo cubría razas y enfermedades conocidas al momento de escribirlo.
+3. **Violación del principio de zero-hardcoding**: el código sabía de antemano qué entidades existían.
+
+La Lookup API resuelve estos problemas: funciona con cualquier término que la ontología tenga, sin necesidad de mantenimiento manual.
