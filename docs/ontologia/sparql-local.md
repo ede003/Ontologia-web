@@ -1,4 +1,4 @@
-# Consultas SPARQL sobre la ontología locaal
+# Consultas SPARQL sobre la ontología local
 
 **Archivos:** `src/services/schemaDiscovery.ts`, `src/repositories/ontologyRepository.ts`  
 **Motor SPARQL:** `@comunica/query-sparql-rdfjs`
