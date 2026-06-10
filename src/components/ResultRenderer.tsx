@@ -1,4 +1,5 @@
 import { type Language, useTranslations, translateDomainValue } from '../i18n/translations'
+import { useTranslatedValues } from '../hooks/useTranslatedValues'
 
 export interface QueryMeta {
   searchMode: 'entity' | 'content' | 'multi-entity' | 'fallback'
@@ -20,13 +21,6 @@ function shortUri(uri: string): string {
   const s = uri.lastIndexOf('/')
   return s !== -1 ? uri.slice(s + 1) : uri
 }
-
-function cellValue(val: string | undefined, lang: Language): string {
-  if (!val) return '—'
-  if (val.startsWith('http')) return shortUri(val)
-  return translateDomainValue(val, lang)
-}
-
 const SKIP_KEYS = new Set(['instance', 'subject', 'object', 'enf', 'servicio', 'labelPred'])
 
 function colLabel(key: string): string {
@@ -43,6 +37,26 @@ function colLabel(key: string): string {
 export default function ResultRenderer({ results, queryMeta, lang }: ResultRendererProps) {
   const t = useTranslations(lang)
 
+  const columns = results && results.length > 0
+    ? Object.keys(results[0]).filter(k => !SKIP_KEYS.has(k) && !/^var\d+$/.test(k))
+    : []
+
+  const columnLabels = columns.map(col => colLabel(col))
+
+  const rawValues = results.flatMap(r =>
+    Object.values(r)
+      .filter(value => typeof value === 'string' && value.length > 0)
+      .map(value => value as string)
+  ).concat(columnLabels)
+
+  const translations = useTranslatedValues(rawValues, lang)
+
+  const translateValue = (val: string | undefined): string => {
+    if (!val) return '—'
+    if (val.startsWith('http')) return shortUri(val)
+    return translations[val] ?? translateDomainValue(val, lang)
+  }
+
   if (!results || results.length === 0) {
     return <p className="vet-state">{t.noResultsSearch}</p>
   }
@@ -54,19 +68,19 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
         <table className="vet-table">
           <thead>
             <tr>
-              <th>{'Tipo'}</th>
-              <th>{'Nombre'}</th>
-              <th>{'Campo'}</th>
-              <th>{'Valor encontrado'}</th>
+              <th>{translateValue('Tipo')}</th>
+              <th>{translateValue('Nombre')}</th>
+              <th>{translateValue('Campo')}</th>
+              <th>{translateValue('Valor encontrado')}</th>
             </tr>
           </thead>
           <tbody>
             {results.map((r, i) => (
               <tr key={i}>
-                <td>{r.className ?? '—'}</td>
-                <td>{r.labelVal ?? shortUri(r.instance ?? '')}</td>
-                <td>{r.matchProp ? colLabel(shortUri(r.matchProp)) : '—'}</td>
-                <td>{translateDomainValue(r.matchVal ?? '—', lang)}</td>
+                <td>{r.className ? translateValue(r.className) : '—'}</td>
+                <td>{r.labelVal ? translateValue(r.labelVal) : shortUri(r.instance ?? '')}</td>
+                <td>{r.matchProp ? translateValue(colLabel(shortUri(r.matchProp))) : '—'}</td>
+                <td>{translateValue(r.matchVal)}</td>
               </tr>
             ))}
           </tbody>
@@ -87,8 +101,8 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
           <thead>
             <tr>
               {contexts.map((ctx, i) => (
-                <th key={i}>{ctx.className}</th>
-              ))}
+                  <th key={i}>{translateValue(ctx.className)}</th>
+                ))}
             </tr>
           </thead>
           <tbody>
@@ -96,7 +110,7 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
               <tr key={i}>
                 {contexts.map((_, idx) => (
                   <td key={idx}>
-                    {r[`var${idx}Name`] ?? cellValue(r[`var${idx}`], lang)}
+                    {r[`var${idx}Name`] ? translateValue(r[`var${idx}Name`]) : translateValue(r[`var${idx}`])}
                   </td>
                 ))}
               </tr>
@@ -125,9 +139,9 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
           <tbody>
             {results.map((r, i) => (
               <tr key={i}>
-                <td>{r.subjectName ?? cellValue(r.subject, lang)}</td>
+                <td>{r.subjectName ? translateValue(r.subjectName) : translateValue(r.subject)}</td>
                 <td><span className="vet-pill">→</span></td>
-                <td>{r.objectName ?? cellValue(r.object, lang)}</td>
+                <td>{r.objectName ? translateValue(r.objectName) : translateValue(r.object)}</td>
               </tr>
             ))}
           </tbody>
@@ -140,21 +154,20 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
   }
 
   // ── Single-class / fallback ───────────────────────────────────────────────
-  const columns = Object.keys(results[0]).filter(k => !SKIP_KEYS.has(k) && !/^var\d+$/.test(k))
 
   return (
     <div className="vet-table-wrap">
       <table className="vet-table">
         <thead>
           <tr>
-            {columns.map(col => <th key={col}>{colLabel(col)}</th>)}
+            {columns.map(col => <th key={col}>{translateValue(colLabel(col))}</th>)}
           </tr>
         </thead>
         <tbody>
           {results.map((r, i) => (
             <tr key={i}>
               {columns.map(col => (
-                <td key={col}>{cellValue(r[col], lang)}</td>
+                <td key={col}>{translateValue(r[col])}</td>
               ))}
             </tr>
           ))}

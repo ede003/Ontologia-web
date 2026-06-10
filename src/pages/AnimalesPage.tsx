@@ -8,6 +8,7 @@ import logo from '../assets/images/logoveterinaria.png';
 import { Search } from 'lucide-react';
 import { type Language, useTranslations, translateDomainValue } from '../i18n/translations';
 import { LanguageSelector } from '../components/LanguageSelector';
+import { useTranslatedValues } from '../hooks/useTranslatedValues';
 
 import { parseQuery } from '../utils/queryParser';
 import { buildQuery } from '../utils/sparqlBuilder';
@@ -27,8 +28,25 @@ function AnimalDrawer({ animal, onClose, lang }: DrawerProps) {
   const t = useTranslations(lang);
   const { enriched, loading } = useDbpediaEnrich(animal, lang);
   const p = animal.props;
+  const translations = useTranslatedValues(
+    [
+      p.nombreAnimal,
+      p.especie,
+      p.raza,
+      p.sexo,
+      p.color,
+      p.enfermedades,
+      p.dueno,
+      p.veterinario,
+      enriched?.[0]?.abstract,
+    ],
+    lang,
+  )
 
-  const formatValue = (value?: string) => value ? translateDomainValue(value, lang) : '—';
+  const formatValue = (value?: string) => {
+    if (!value) return '—'
+    return translations[value] ?? translateDomainValue(value, lang)
+  }
 
   const fields: [string, string][] = [
     [t.drawerFieldName,    formatValue(p.nombreAnimal)],
@@ -39,8 +57,8 @@ function AnimalDrawer({ animal, onClose, lang }: DrawerProps) {
     [t.drawerFieldWeight,  p.peso   ? `${p.peso} ${t.drawerFieldWeightUnit}` : '—'],
     [t.drawerFieldColor,   formatValue(p.color)],
     [t.drawerFieldDisease, formatValue(p.enfermedades)],
-    [t.drawerFieldOwner,   p.dueno         ?? '—'],
-    [t.drawerFieldVeterinarian, p.veterinario ?? '—'],
+    [t.drawerFieldOwner,   formatValue(p.dueno)],
+    [t.drawerFieldVeterinarian, formatValue(p.veterinario)],
   ];
 
   return (
@@ -118,7 +136,25 @@ interface AnimalTableProps {
 
 function AnimalTable({ animales, selected, onSelect, footer, lang, enfermedadOverride }: AnimalTableProps) {
   const t = useTranslations(lang);
-  const formatValue = (value?: string) => value ? translateDomainValue(value, lang) : '—';
+  const rawValues = useMemo(
+    () => animales.flatMap(a => [
+      a.props.nombreAnimal,
+      a.props.especie,
+      a.props.raza,
+      a.props.sexo,
+      a.props.enfermedades,
+      a.props.dueno,
+      a.props.veterinario,
+      enfermedadOverride?.get(a.uri),
+    ]),
+    [animales, enfermedadOverride]
+  )
+  const translations = useTranslatedValues(rawValues, lang)
+
+  const formatValue = (value?: string) => {
+    if (!value) return '—'
+    return translations[value] ?? translateDomainValue(value, lang)
+  }
 
   return (
     <div className="vet-table-wrap">
