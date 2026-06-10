@@ -1,4 +1,4 @@
-import { type Language, useTranslations } from '../i18n/translations'
+import { type Language, useTranslations, translateDomainValue } from '../i18n/translations'
 
 export interface QueryMeta {
   searchMode: 'entity' | 'content' | 'multi-entity' | 'fallback'
@@ -21,9 +21,10 @@ function shortUri(uri: string): string {
   return s !== -1 ? uri.slice(s + 1) : uri
 }
 
-function cellValue(val: string | undefined): string {
+function cellValue(val: string | undefined, lang: Language): string {
   if (!val) return '—'
-  return val.startsWith('http') ? shortUri(val) : val
+  if (val.startsWith('http')) return shortUri(val)
+  return translateDomainValue(val, lang)
 }
 
 const SKIP_KEYS = new Set(['instance', 'subject', 'object', 'enf', 'servicio', 'labelPred'])
@@ -65,7 +66,7 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
                 <td>{r.className ?? '—'}</td>
                 <td>{r.labelVal ?? shortUri(r.instance ?? '')}</td>
                 <td>{r.matchProp ? colLabel(shortUri(r.matchProp)) : '—'}</td>
-                <td>{r.matchVal ?? '—'}</td>
+                <td>{translateDomainValue(r.matchVal ?? '—', lang)}</td>
               </tr>
             ))}
           </tbody>
@@ -95,7 +96,7 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
               <tr key={i}>
                 {contexts.map((_, idx) => (
                   <td key={idx}>
-                    {r[`var${idx}Name`] ?? cellValue(r[`var${idx}`])}
+                    {r[`var${idx}Name`] ?? cellValue(r[`var${idx}`], lang)}
                   </td>
                 ))}
               </tr>
@@ -124,9 +125,9 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
           <tbody>
             {results.map((r, i) => (
               <tr key={i}>
-                <td>{r.subjectName ?? cellValue(r.subject)}</td>
+                <td>{r.subjectName ?? cellValue(r.subject, lang)}</td>
                 <td><span className="vet-pill">→</span></td>
-                <td>{r.objectName ?? cellValue(r.object)}</td>
+                <td>{r.objectName ?? cellValue(r.object, lang)}</td>
               </tr>
             ))}
           </tbody>
@@ -153,7 +154,7 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
           {results.map((r, i) => (
             <tr key={i}>
               {columns.map(col => (
-                <td key={col}>{cellValue(r[col])}</td>
+                <td key={col}>{cellValue(r[col], lang)}</td>
               ))}
             </tr>
           ))}

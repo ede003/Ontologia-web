@@ -6,7 +6,7 @@ import { type Individual } from '../services/ontologyService';
 import { getAnimales } from '../repositories/ontologyRepository';
 import logo from '../assets/images/logoveterinaria.png';
 import { Search } from 'lucide-react';
-import { type Language, useTranslations } from '../i18n/translations';
+import { type Language, useTranslations, translateDomainValue } from '../i18n/translations';
 import { LanguageSelector } from '../components/LanguageSelector';
 
 import { parseQuery } from '../utils/queryParser';
@@ -28,17 +28,19 @@ function AnimalDrawer({ animal, onClose, lang }: DrawerProps) {
   const { enriched, loading } = useDbpediaEnrich(animal, lang);
   const p = animal.props;
 
+  const formatValue = (value?: string) => value ? translateDomainValue(value, lang) : '—';
+
   const fields: [string, string][] = [
-    [t.drawerFieldName,    p.nombreAnimal  ?? '—'],
-    [t.drawerFieldSpecies, p.especie       ?? '—'],
-    [t.drawerFieldBreed,   p.raza          ?? '—'],
-    [t.drawerFieldSex,     p.sexo          ?? '—'],
+    [t.drawerFieldName,    formatValue(p.nombreAnimal)],
+    [t.drawerFieldSpecies, formatValue(p.especie)],
+    [t.drawerFieldBreed,   formatValue(p.raza)],
+    [t.drawerFieldSex,     formatValue(p.sexo)],
     [t.drawerFieldAge,     p.edad   ? `${p.edad} ${t.drawerFieldAgeUnit}` : '—'],
     [t.drawerFieldWeight,  p.peso   ? `${p.peso} ${t.drawerFieldWeightUnit}` : '—'],
-    [t.drawerFieldColor,   p.color         ?? '—'],
-    [t.drawerFieldDisease, p.enfermedades  ?? '—'],
-    ['Dueño',              p.dueno         ?? '—'],
-    ['Veterinario',        p.veterinario   ?? '—'],
+    [t.drawerFieldColor,   formatValue(p.color)],
+    [t.drawerFieldDisease, formatValue(p.enfermedades)],
+    [t.drawerFieldOwner,   p.dueno         ?? '—'],
+    [t.drawerFieldVeterinarian, p.veterinario ?? '—'],
   ];
 
   return (
@@ -116,12 +118,14 @@ interface AnimalTableProps {
 
 function AnimalTable({ animales, selected, onSelect, footer, lang, enfermedadOverride }: AnimalTableProps) {
   const t = useTranslations(lang);
+  const formatValue = (value?: string) => value ? translateDomainValue(value, lang) : '—';
+
   return (
     <div className="vet-table-wrap">
       <table className="vet-table">
         <thead>
           <tr>
-            {[t.colName, t.colSpecies, t.colBreed, t.colSex, t.colAge, t.colDiseases, 'Dueño', 'Veterinario'].map(col => (
+            {[t.colName, t.colSpecies, t.colBreed, t.colSex, t.colAge, t.colDiseases, t.tableOwner, t.tableVeterinarian].map(col => (
               <th key={col}>{col}</th>
             ))}
           </tr>
@@ -129,21 +133,21 @@ function AnimalTable({ animales, selected, onSelect, footer, lang, enfermedadOve
         <tbody>
           {animales.map(a => {
             const isSelected = selected?.uri === a.uri;
-            const enfermedad = enfermedadOverride?.get(a.uri) ?? a.props.enfermedades ?? '—';
+            const enfermedad = formatValue(enfermedadOverride?.get(a.uri) ?? a.props.enfermedades);
             return (
               <tr
                 key={a.uri}
                 className={isSelected ? 'selected' : ''}
                 onClick={() => onSelect(isSelected ? null : a)}
               >
-                <td>{a.props.nombreAnimal ?? '—'}</td>
-                <td>{a.props.especie ? <span className="vet-pill">{a.props.especie}</span> : '—'}</td>
-                <td>{a.props.raza        ?? '—'}</td>
-                <td>{a.props.sexo        ?? '—'}</td>
+                <td>{formatValue(a.props.nombreAnimal)}</td>
+                <td>{a.props.especie ? <span className="vet-pill">{formatValue(a.props.especie)}</span> : '—'}</td>
+                <td>{formatValue(a.props.raza)}</td>
+                <td>{formatValue(a.props.sexo)}</td>
                 <td>{a.props.edad        ?? '—'}</td>
                 <td>{enfermedad}</td>
-                <td>{a.props.dueno       ?? '—'}</td>
-                <td>{a.props.veterinario ?? '—'}</td>
+                <td>{formatValue(a.props.dueno)}</td>
+                <td>{formatValue(a.props.veterinario)}</td>
               </tr>
             );
           })}
@@ -324,7 +328,7 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
           </div>
           <select className="vet-select" value={especieFilter} onChange={e => setEspecieFilter(e.target.value)}>
             <option value="">{t.allSpecies}</option>
-            {especies.map(esp => <option key={esp} value={esp}>{esp}</option>)}
+            {especies.map(esp => <option key={esp} value={esp}>{translateDomainValue(esp, lang)}</option>)}
           </select>
         </div>
 
@@ -339,7 +343,7 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
               animales={animalesPorEspecie}
               selected={selected}
               onSelect={setSelected}
-              footer={`${animalesPorEspecie.length} ${t.footerAnimals} · ${especieFilter}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`}
+              footer={`${animalesPorEspecie.length} ${t.footerAnimals} · ${translateDomainValue(especieFilter, lang)}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`}
               lang={lang}
             />
             {selected && <AnimalDrawer animal={selected} onClose={() => setSelected(null)} lang={lang} />}
@@ -355,7 +359,7 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
               selected={selected}
               onSelect={setSelected}
               enfermedadOverride={enfermedadOverride}
-              footer={`${relationalAnimals.length} ${t.footerOf ?? 'de'} ${animales.length} ${t.footerAnimals}${especieFilter ? ` · ${especieFilter}` : ''}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`}
+              footer={`${relationalAnimals.length} ${t.footerOf ?? 'de'} ${animales.length} ${t.footerAnimals}${especieFilter ? ` · ${translateDomainValue(especieFilter, lang)}` : ''}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`}
               lang={lang}
             />
             {selected && <AnimalDrawer animal={selected} onClose={() => setSelected(null)} lang={lang} />}
@@ -367,7 +371,7 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
               animales={displayAnimals}
               selected={selected}
               onSelect={setSelected}
-              footer={`${displayAnimals.length} ${t.footerOf ?? 'de'} ${animales.length} ${t.footerAnimals}${especieFilter ? ` · ${especieFilter}` : ''}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`}
+              footer={`${displayAnimals.length} ${t.footerOf ?? 'de'} ${animales.length} ${t.footerAnimals}${especieFilter ? ` · ${translateDomainValue(especieFilter, lang)}` : ''}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`}
               lang={lang}
             />
             {selected && <AnimalDrawer animal={selected} onClose={() => setSelected(null)} lang={lang} />}

@@ -52,7 +52,12 @@ export interface Translations {
   drawerFieldWeightUnit: string; // "kg"
   drawerFieldColor: string;
   drawerFieldDisease: string;
+  drawerFieldOwner: string;
+  drawerFieldVeterinarian: string;
   drawerClose: string;          // aria-label del botón ×
+
+  tableOwner: string;
+  tableVeterinarian: string;
 
   // ── ResultRenderer ───────────────────────────────────────
   colRelation: string;
@@ -111,7 +116,12 @@ const es: Translations = {
   drawerFieldWeightUnit: 'kg',
   drawerFieldColor: 'Color',
   drawerFieldDisease: 'Enfermedad',
+  drawerFieldOwner: 'Dueño',
+  drawerFieldVeterinarian: 'Veterinario',
   drawerClose: 'Cerrar',
+
+  tableOwner: 'Dueño',
+  tableVeterinarian: 'Veterinario',
 
   colRelation: 'Relación',
   resultCount: 'resultado',
@@ -166,7 +176,12 @@ const en: Translations = {
   drawerFieldWeightUnit: 'kg',
   drawerFieldColor: 'Color',
   drawerFieldDisease: 'Disease',
+  drawerFieldOwner: 'Owner',
+  drawerFieldVeterinarian: 'Veterinarian',
   drawerClose: 'Close',
+
+  tableOwner: 'Owner',
+  tableVeterinarian: 'Veterinarian',
 
   colRelation: 'Relation',
   resultCount: 'result',
@@ -221,7 +236,12 @@ const pt: Translations = {
   drawerFieldWeightUnit: 'kg',
   drawerFieldColor: 'Cor',
   drawerFieldDisease: 'Doença',
+  drawerFieldOwner: 'Dono',
+  drawerFieldVeterinarian: 'Veterinário',
   drawerClose: 'Fechar',
+
+  tableOwner: 'Dono',
+  tableVeterinarian: 'Veterinário',
 
   colRelation: 'Relação',
   resultCount: 'resultado',
@@ -244,6 +264,82 @@ export const translations: Record<Language, Translations> = { es, en, pt };
 // ============================================================
 export function useTranslations(lang: Language): Translations {
   return translations[lang];
+}
+
+const domainValueTranslations: Record<Language, Record<string, string>> = {
+  en: {
+    macho: 'Male',
+    hembra: 'Female',
+
+    perro: 'Dog',
+    perros: 'Dogs',
+    gato: 'Cat',
+    gatos: 'Cats',
+    ave: 'Bird',
+    aves: 'Birds',
+    conejo: 'Rabbit',
+    conejos: 'Rabbits',
+    hamster: 'Hamster',
+    pez: 'Fish',
+    tortuga: 'Turtle',
+    tortugas: 'Turtles',
+    caballo: 'Horse',
+    caballos: 'Horses',
+    loro: 'Parrot',
+    loros: 'Parrots',
+    cobaya: 'Guinea pig',
+
+    caniche: 'Poodle',
+    poodle: 'Poodle',
+    labrador: 'Labrador',
+    chihuahua: 'Chihuahua',
+    pomeranian: 'Pomeranian',
+    siamés: 'Siamese',
+    siamese: 'Siamese',
+    persa: 'Persian',
+  },
+  pt: {
+    macho: 'Macho',
+    hembra: 'Fêmea',
+
+    perro: 'Cão',
+    perros: 'Cães',
+    gato: 'Gato',
+    gatos: 'Gatos',
+    ave: 'Ave',
+    aves: 'Aves',
+    conejo: 'Coelho',
+    conejos: 'Coelhos',
+    hamster: 'Hamster',
+    pez: 'Peixe',
+    tortuga: 'Tartaruga',
+    tortugas: 'Tartarugas',
+    caballo: 'Cavalo',
+    caballos: 'Cavalos',
+    loro: 'Papagaio',
+    loros: 'Papagaios',
+    cobaya: 'Porquinho-da-índia',
+
+    caniche: 'Poodle',
+    poodle: 'Poodle',
+    labrador: 'Labrador',
+    chihuahua: 'Chihuahua',
+    pomeranian: 'Pomeranian',
+    siamés: 'Siamês',
+    siamese: 'Siamês',
+    persa: 'Persa',
+  },
+  es: {},
+};
+
+export function translateDomainValue(value: string, lang: Language): string {
+  if (lang === 'es') return value;
+  const map = domainValueTranslations[lang] ?? {};
+
+  return value.split(/(\s+|[;,|]+)/).map(segment => {
+    const key = segment.trim().toLowerCase();
+    return key && map[key] ? map[key] : segment;
+  }).join('');
 }
 
 // ============================================================
