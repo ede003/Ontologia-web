@@ -5,7 +5,7 @@ const { namedNode, literal } = DataFactory;
 const VET_NS  = 'http://www.semanticweb.org/grupo14/ontologias/veterinaria#';
 const RDF_NS  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
 const OWL_NS  = 'http://www.w3.org/2002/07/owl#';
-const ONTOLOGY_PATH = '/ontologia/Ontologia_Veterinaria_DEPURADA.rdf';
+const ONTOLOGY_PATH = '/ontologia/ontologia-veterinaria-OF.rdf';
 
 export interface Individual {
   uri: string;
