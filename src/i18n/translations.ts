@@ -41,6 +41,7 @@ export interface Translations {
   drawerConsultingDbpedia: string;
   drawerNoDbpedia: string;
   drawerWikipediaLink: string;
+  drawerDbpediaLink: string;
 
   drawerFieldName: string;
   drawerFieldSpecies: string;
@@ -105,6 +106,7 @@ const es: Translations = {
   drawerConsultingDbpedia: 'Consultando DBpedia…',
   drawerNoDbpedia: 'Sin información adicional en DBpedia.',
   drawerWikipediaLink: 'Ver en Wikipedia →',
+  drawerDbpediaLink: 'Ver en DBpedia →',
 
   drawerFieldName: 'Nombre',
   drawerFieldSpecies: 'Especie',
@@ -165,6 +167,7 @@ const en: Translations = {
   drawerConsultingDbpedia: 'Querying DBpedia…',
   drawerNoDbpedia: 'No additional information in DBpedia.',
   drawerWikipediaLink: 'View on Wikipedia →',
+  drawerDbpediaLink: 'View on DBpedia →',
 
   drawerFieldName: 'Name',
   drawerFieldSpecies: 'Species',
@@ -225,6 +228,7 @@ const pt: Translations = {
   drawerConsultingDbpedia: 'Consultando DBpedia…',
   drawerNoDbpedia: 'Sem informação adicional no DBpedia.',
   drawerWikipediaLink: 'Ver na Wikipedia →',
+  drawerDbpediaLink: 'Ver no DBpedia →',
 
   drawerFieldName: 'Nome',
   drawerFieldSpecies: 'Espécie',
@@ -265,261 +269,3 @@ export const translations: Record<Language, Translations> = { es, en, pt };
 export function useTranslations(lang: Language): Translations {
   return translations[lang];
 }
-
-const domainValueTranslations: Record<Language, Record<string, string>> = {
-  en: {
-    macho: 'Male',
-    hembra: 'Female',
-    perro: 'Dog',
-    perros: 'Dogs',
-    gato: 'Cat',
-    gatos: 'Cats',
-    ave: 'Bird',
-    aves: 'Birds',
-    conejo: 'Rabbit',
-    conejos: 'Rabbits',
-    hamster: 'Hamster',
-    pez: 'Fish',
-    tortuga: 'Turtle',
-    tortugas: 'Turtles',
-    caballo: 'Horse',
-    caballos: 'Horses',
-    loro: 'Parrot',
-    loros: 'Parrots',
-    cobaya: 'Guinea pig',
-
-    caniche: 'Poodle',
-    poodle: 'Poodle',
-    labrador: 'Labrador',
-    chihuahua: 'Chihuahua',
-    pomeranian: 'Pomeranian',
-    siamés: 'Siamese',
-    siamese: 'Siamese',
-    persa: 'Persian',
-
-    dueño: 'Owner',
-    dueños: 'Owners',
-    dueno: 'Owner',
-    duenos: 'Owners',
-    veterinario: 'Veterinarian',
-    veterinarios: 'Veterinarians',
-    propietario: 'Owner',
-    mascota: 'Pet',
-    mascotas: 'Pets',
-    enfermedad: 'Disease',
-    enfermedades: 'Diseases',
-    consulta: 'Consultation',
-    consultas: 'Consultations',
-    vacuna: 'Vaccine',
-    vacunas: 'Vaccines',
-    tratamiento: 'Treatment',
-    tratamientos: 'Treatments',
-    examen: 'Exam',
-    examenes: 'Exams',
-    cirugía: 'Surgery',
-    cirugia: 'Surgery',
-    cirugias: 'Surgeries',
-    medicamento: 'Medicine',
-    medicamentos: 'Medicines',
-
-    absceso: 'Abscess',
-    dental: 'Dental',
-    infección: 'Infection',
-    infeccion: 'Infection',
-    viral: 'Viral',
-    respiratorio: 'Respiratory',
-    pulmonar: 'Pulmonary',
-    ocular: 'Ocular',
-    gastrointestinal: 'Gastrointestinal',
-    grave: 'Severe',
-    moderado: 'Moderate',
-    leve: 'Mild',
-    crónico: 'Chronic',
-    cronico: 'Chronic',
-    agudo: 'Acute',
-    inflamación: 'Inflammation',
-    inflamacion: 'Inflammation',
-    persistente: 'Persistent',
-    infeccioso: 'Infectious',
-  },
-  pt: {
-    macho: 'Macho',
-    hembra: 'Fêmea',
-    perro: 'Cão',
-    perros: 'Cães',
-    gato: 'Gato',
-    gatos: 'Gatos',
-    ave: 'Ave',
-    aves: 'Aves',
-    conejo: 'Coelho',
-    conejos: 'Coelhos',
-    hamster: 'Hamster',
-    pez: 'Peixe',
-    tortuga: 'Tartaruga',
-    tortugas: 'Tartarugas',
-    caballo: 'Cavalo',
-    caballos: 'Cavalos',
-    loro: 'Papagaio',
-    loros: 'Papagaios',
-    cobaya: 'Porquinho-da-índia',
-
-    caniche: 'Poodle',
-    poodle: 'Poodle',
-    labrador: 'Labrador',
-    chihuahua: 'Chihuahua',
-    pomeranian: 'Pomeranian',
-    siamés: 'Siamês',
-    siamese: 'Siamês',
-    persa: 'Persa',
-
-    dueño: 'Dono',
-    dueños: 'Donos',
-    dueno: 'Dono',
-    duenos: 'Donos',
-    veterinario: 'Veterinário',
-    veterinarios: 'Veterinários',
-    propietario: 'Dono',
-    mascota: 'Mascote',
-    mascotas: 'Mascotes',
-    enfermedad: 'Doença',
-    enfermedades: 'Doenças',
-    consulta: 'Consulta',
-    consultas: 'Consultas',
-    vacuna: 'Vacina',
-    vacunas: 'Vacinas',
-    tratamiento: 'Tratamento',
-    tratamientos: 'Tratamentos',
-    examen: 'Exame',
-    examenes: 'Exames',
-    cirugía: 'Cirurgia',
-    cirugia: 'Cirurgia',
-    cirugias: 'Cirurgias',
-    medicamento: 'Medicamento',
-    medicamentos: 'Medicamentos',
-
-    absceso: 'Abscesso',
-    dental: 'Dental',
-    infección: 'Infecção',
-    infeccion: 'Infecção',
-    viral: 'Viral',
-    respiratorio: 'Respiratório',
-    pulmonar: 'Pulmonar',
-    ocular: 'Ocular',
-    gastrointestinal: 'Gastrointestinal',
-    grave: 'Grave',
-    moderado: 'Moderado',
-    leve: 'Leve',
-    crónico: 'Crônico',
-    cronico: 'Crônico',
-    agudo: 'Agudo',
-    inflamación: 'Inflamação',
-    inflamacion: 'Inflamação',
-    persistente: 'Persistente',
-    infeccioso: 'Infeccioso',
-  },
-  es: {},
-};
-
-export function translateDomainValue(value: string, lang: Language): string {
-  if (lang === 'es') return value;
-  const map = domainValueTranslations[lang] ?? {};
-
-  return value.split(/(\s+|[;,|]+)/).map(segment => {
-    const key = segment.trim().toLowerCase();
-    return key && map[key] ? map[key] : segment;
-  }).join('');
-}
-
-// Like translateDomainValue but only returns a mapped value when ALL non-space
-// segments are present in the domain map. Otherwise returns the original value.
-export function translateDomainValueStrict(value: string, lang: Language): string {
-  if (lang === 'es') return value;
-  const map = domainValueTranslations[lang] ?? {};
-
-  const parts = value.split(/(\s+|[;,|]+)/);
-  let allMapped = true;
-  const mapped = parts.map(segment => {
-    const key = segment.trim().toLowerCase();
-    if (key === '') return segment;
-    if (map[key]) return map[key];
-    allMapped = false;
-    return segment;
-  }).join('');
-
-  return allMapped ? mapped : value;
-}
-
-// ============================================================
-//  DICCIONARIO DE BÚSQUEDA MULTILINGÜE
-//  Traduce términos EN/PT → ES para que la ontología
-//  (que está en español) pueda buscar correctamente.
-// ============================================================
-export const searchTermTranslations: Record<string, string> = {
-  // ── Inglés → Español ─────────────────────────────────────
-  // Clases generales
-  animal: 'animal', animals: 'animales',
-  pet: 'mascota', pets: 'mascotas',
-  disease: 'enfermedad', diseases: 'enfermedades', illness: 'enfermedad',
-  medicine: 'medicamento', medicines: 'medicamentos',
-  medication: 'medicamento', medications: 'medicamentos', drug: 'medicamento',
-  vet: 'veterinario', veterinarian: 'veterinario', veterinary: 'veterinario',
-  consultation: 'consulta', consultations: 'consultas', appointment: 'consulta',
-  vaccine: 'vacuna', vaccines: 'vacunas', vaccination: 'vacunacion',
-  treatment: 'tratamiento', treatments: 'tratamientos',
-  exam: 'examen', examination: 'examen', 'medical exam': 'examen',
-  surgery: 'cirugia', surgeries: 'cirugias', operation: 'cirugia',
-  owner: 'dueño', owners: 'dueños',
-
-  // Sexo
-  male: 'macho', female: 'hembra',
-
-  // Especies comunes
-  dog: 'perro', dogs: 'perros',
-  cat: 'gato', cats: 'gatos',
-  bird: 'ave', birds: 'aves',
-  rabbit: 'conejo', rabbits: 'conejos',
-  hamster: 'hamster',
-  fish: 'pez',
-  turtle: 'tortuga', turtles: 'tortugas',
-  horse: 'caballo', horses: 'caballos',
-  parrot: 'loro', parrots: 'loros',
-  guinea: 'cobaya',
-
-  // Razas comunes
-  'golden retriever': 'golden retriever',
-  labrador: 'labrador',
-  bulldog: 'bulldog',
-  can: 'caniche',
-  poodle: 'caniche',
-  chihuahua: 'chihuahua',
-  pomeranian: 'pomerania',
-  siamese: 'siamés',
-  persian: 'persa',
-
-  // ── Portugués → Español ──────────────────────────────────
-  // Clases generales
-  doença: 'enfermedad', doenças: 'enfermedades',
-  medicamento: 'medicamento', medicamentos: 'medicamentos',
-  medicina: 'medicamento', medicinas: 'medicamentos',
-  veterinário: 'veterinario', veterinária: 'veterinario',
-  consulta: 'consulta', consultas: 'consultas',
-  vacina: 'vacuna', vacinas: 'vacunas', vacinação: 'vacunacion',
-  tratamento: 'tratamiento', tratamentos: 'tratamientos',
-  exame: 'examen', exames: 'examenes',
-  cirurgia: 'cirugia', cirurgias: 'cirugias',
-  dono: 'dueño', donos: 'dueños', proprietário: 'dueño',
-  mascote: 'mascota', mascotes: 'mascotas',
-
-  // Sexo
-  macho: 'macho', fêmea: 'hembra', femea: 'hembra',
-
-  // Especies comunes
-  cão: 'perro', cao: 'perro', cães: 'perros', caes: 'perros',
-  gato: 'gato', gatos: 'gatos',
-  pássaro: 'ave', passaro: 'ave', pássaros: 'aves',
-  coelho: 'conejo', coelhos: 'conejos',
-  peixe: 'pez', peixes: 'peces',
-  tartaruga: 'tortuga', tartarugas: 'tortugas',
-  cavalo: 'caballo', cavalos: 'caballos',
-  papagaio: 'loro', papagaios: 'loros',
-};
