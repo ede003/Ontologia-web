@@ -1,5 +1,4 @@
-import { type Language, useTranslations, translateDomainValue } from '../i18n/translations'
-import { useTranslatedValues } from '../hooks/useTranslatedValues'
+import { type Language, type Translations, useTranslations } from '../i18n/translations'
 
 export interface QueryMeta {
   searchMode: 'entity' | 'content' | 'multi-entity' | 'fallback'
@@ -34,6 +33,30 @@ function colLabel(key: string): string {
     .join(' ')
 }
 
+function ResultTable({
+  head,
+  children,
+  count,
+  t,
+}: {
+  head: React.ReactNode
+  children: React.ReactNode
+  count: number
+  t: Translations
+}) {
+  return (
+    <div className="vet-table-wrap">
+      <table className="vet-table">
+        <thead><tr>{head}</tr></thead>
+        <tbody>{children}</tbody>
+      </table>
+      <div className="vet-table-footer">
+        {count} {count !== 1 ? t.resultCountPlural : t.resultCount}
+      </div>
+    </div>
+  )
+}
+
 export default function ResultRenderer({ results, queryMeta, lang }: ResultRendererProps) {
   const t = useTranslations(lang)
 
@@ -41,20 +64,11 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
     ? Object.keys(results[0]).filter(k => !SKIP_KEYS.has(k) && !/^var\d+$/.test(k))
     : []
 
-  const columnLabels = columns.map(col => colLabel(col))
-
-  const rawValues = results.flatMap(r =>
-    Object.values(r)
-      .filter(value => typeof value === 'string' && value.length > 0)
-      .map(value => value as string)
-  ).concat(columnLabels)
-
-  const translations = useTranslatedValues(rawValues, lang)
-
+  // Los valores ya vienen en el idioma de la ontología cargada; no se traducen.
   const translateValue = (val: string | undefined): string => {
     if (!val) return '—'
     if (val.startsWith('http')) return shortUri(val)
-    return translations[val] ?? translateDomainValue(val, lang)
+    return val
   }
 
   if (!results || results.length === 0) {
@@ -64,31 +78,21 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
   // ── Content search mode ───────────────────────────────────────────────────
   if (queryMeta.searchMode === 'content') {
     return (
-      <div className="vet-table-wrap">
-        <table className="vet-table">
-          <thead>
-            <tr>
-              <th>{translateValue('Tipo')}</th>
-              <th>{translateValue('Nombre')}</th>
-              <th>{translateValue('Campo')}</th>
-              <th>{translateValue('Valor encontrado')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((r, i) => (
-              <tr key={i}>
-                <td>{r.className ? translateValue(r.className) : '—'}</td>
-                <td>{r.labelVal ? translateValue(r.labelVal) : shortUri(r.instance ?? '')}</td>
-                <td>{r.matchProp ? translateValue(colLabel(shortUri(r.matchProp))) : '—'}</td>
-                <td>{translateValue(r.matchVal)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="vet-table-footer">
-          {results.length} {results.length !== 1 ? t.resultCountPlural : t.resultCount}
-        </div>
-      </div>
+      <ResultTable count={results.length} t={t} head={<>
+        <th>{translateValue('Tipo')}</th>
+        <th>{translateValue('Nombre')}</th>
+        <th>{translateValue('Campo')}</th>
+        <th>{translateValue('Valor encontrado')}</th>
+      </>}>
+        {results.map((r, i) => (
+          <tr key={i}>
+            <td>{r.className ? translateValue(r.className) : '—'}</td>
+            <td>{r.labelVal ? translateValue(r.labelVal) : shortUri(r.instance ?? '')}</td>
+            <td>{r.matchProp ? colLabel(shortUri(r.matchProp)) : '—'}</td>
+            <td>{translateValue(r.matchVal)}</td>
+          </tr>
+        ))}
+      </ResultTable>
     )
   }
 
@@ -96,86 +100,34 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
   if (queryMeta.searchMode === 'multi-entity' && queryMeta.entityContexts.length >= 2) {
     const contexts = queryMeta.entityContexts
     return (
-      <div className="vet-table-wrap">
-        <table className="vet-table">
-          <thead>
-            <tr>
-              {contexts.map((ctx, i) => (
-                  <th key={i}>{translateValue(ctx.className)}</th>
-                ))}
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((r, i) => (
-              <tr key={i}>
-                {contexts.map((_, idx) => (
-                  <td key={idx}>
-                    {r[`var${idx}Name`] ? translateValue(r[`var${idx}Name`]) : translateValue(r[`var${idx}`])}
-                  </td>
-                ))}
-              </tr>
+      <ResultTable count={results.length} t={t} head={<>
+        {contexts.map((ctx, i) => <th key={i}>{translateValue(ctx.className)}</th>)}
+      </>}>
+        {results.map((r, i) => (
+          <tr key={i}>
+            {contexts.map((_, idx) => (
+              <td key={idx}>
+                {r[`var${idx}Name`] ? translateValue(r[`var${idx}Name`]) : translateValue(r[`var${idx}`])}
+              </td>
             ))}
-          </tbody>
-        </table>
-        <div className="vet-table-footer">
-          {results.length} {results.length !== 1 ? t.resultCountPlural : t.resultCount}
-        </div>
-      </div>
-    )
-  }
-
-  // ── Legacy relational ─────────────────────────────────────────────────────
-  if (queryMeta.isRelational && queryMeta.primaryType && queryMeta.secondaryType) {
-    return (
-      <div className="vet-table-wrap">
-        <table className="vet-table">
-          <thead>
-            <tr>
-              <th>{queryMeta.primaryType}</th>
-              <th>{t.colRelation ?? 'Relación'}</th>
-              <th>{queryMeta.secondaryType}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {results.map((r, i) => (
-              <tr key={i}>
-                <td>{r.subjectName ? translateValue(r.subjectName) : translateValue(r.subject)}</td>
-                <td><span className="vet-pill">→</span></td>
-                <td>{r.objectName ? translateValue(r.objectName) : translateValue(r.object)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="vet-table-footer">
-          {results.length} {results.length !== 1 ? t.resultCountPlural : t.resultCount}
-        </div>
-      </div>
+          </tr>
+        ))}
+      </ResultTable>
     )
   }
 
   // ── Single-class / fallback ───────────────────────────────────────────────
-
   return (
-    <div className="vet-table-wrap">
-      <table className="vet-table">
-        <thead>
-          <tr>
-            {columns.map(col => <th key={col}>{translateValue(colLabel(col))}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((r, i) => (
-            <tr key={i}>
-              {columns.map(col => (
-                <td key={col}>{translateValue(r[col])}</td>
-              ))}
-            </tr>
+    <ResultTable count={results.length} t={t} head={<>
+      {columns.map(col => <th key={col}>{colLabel(col)}</th>)}
+    </>}>
+      {results.map((r, i) => (
+        <tr key={i}>
+          {columns.map(col => (
+            <td key={col}>{translateValue(r[col])}</td>
           ))}
-        </tbody>
-      </table>
-      <div className="vet-table-footer">
-        {results.length} {results.length !== 1 ? t.resultCountPlural : t.resultCount}
-      </div>
-    </div>
+        </tr>
+      ))}
+    </ResultTable>
   )
 }

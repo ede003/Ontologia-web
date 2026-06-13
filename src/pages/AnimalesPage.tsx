@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useMemo, useState, useEffect, useRef, Fragment } from 'react';
 import { useOntology } from '../hooks/useOntology';
 import { useOntologySchema } from '../hooks/useOntologySchema';
 import { useDbpediaEnrich } from '../hooks/useDbpediaEnrich';
@@ -6,9 +6,8 @@ import { type Individual } from '../services/ontologyService';
 import { getAnimales } from '../repositories/ontologyRepository';
 import logo from '../assets/images/logoveterinaria.png';
 import { Search } from 'lucide-react';
-import { type Language, useTranslations, translateDomainValue } from '../i18n/translations';
+import { type Language, useTranslations } from '../i18n/translations';
 import { LanguageSelector } from '../components/LanguageSelector';
-import { useTranslatedValues } from '../hooks/useTranslatedValues';
 
 import { parseQuery } from '../utils/queryParser';
 import { buildQuery } from '../utils/sparqlBuilder';
@@ -28,25 +27,9 @@ function AnimalDrawer({ animal, onClose, lang }: DrawerProps) {
   const t = useTranslations(lang);
   const { enriched, loading } = useDbpediaEnrich(animal, lang);
   const p = animal.props;
-  const translations = useTranslatedValues(
-    [
-      p.nombreAnimal,
-      p.especie,
-      p.raza,
-      p.sexo,
-      p.color,
-      p.enfermedades,
-      p.dueno,
-      p.veterinario,
-      enriched?.[0]?.abstract,
-    ],
-    lang,
-  )
 
-  const formatValue = (value?: string) => {
-    if (!value) return '—'
-    return translations[value] ?? translateDomainValue(value, lang)
-  }
+  // Los datos ya vienen en el idioma de la ontología cargada; no se traducen.
+  const formatValue = (value?: string) => value ?? '—'
 
   const fields: [string, string][] = [
     [t.drawerFieldName,    formatValue(p.nombreAnimal)],
@@ -72,10 +55,10 @@ function AnimalDrawer({ animal, onClose, lang }: DrawerProps) {
         <p className="vet-drawer__section-label">{t.drawerOntologyData}</p>
         <dl className="vet-drawer__fields">
           {fields.map(([label, value]) => (
-            <>
-              <dt key={`dt-${label}`}>{label}:</dt>
-              <dd key={`dd-${label}`}>{value}</dd>
-            </>
+            <Fragment key={label}>
+              <dt>{label}:</dt>
+              <dd>{value}</dd>
+            </Fragment>
           ))}
         </dl>
 
@@ -107,7 +90,7 @@ function AnimalDrawer({ animal, onClose, lang }: DrawerProps) {
                 )}
                 {row.dbpediaUri && (
                   <a className="vet-drawer__link" href={row.dbpediaUri} target="_blank" rel="noopener noreferrer">
-                    Ver en DBpedia →
+                    {t.drawerDbpediaLink}
                   </a>
                 )}
               </div>
@@ -136,25 +119,9 @@ interface AnimalTableProps {
 
 function AnimalTable({ animales, selected, onSelect, footer, lang, enfermedadOverride }: AnimalTableProps) {
   const t = useTranslations(lang);
-  const rawValues = useMemo(
-    () => animales.flatMap(a => [
-      a.props.nombreAnimal,
-      a.props.especie,
-      a.props.raza,
-      a.props.sexo,
-      a.props.enfermedades,
-      a.props.dueno,
-      a.props.veterinario,
-      enfermedadOverride?.get(a.uri),
-    ]),
-    [animales, enfermedadOverride]
-  )
-  const translations = useTranslatedValues(rawValues, lang)
 
-  const formatValue = (value?: string) => {
-    if (!value) return '—'
-    return translations[value] ?? translateDomainValue(value, lang)
-  }
+  // Los datos ya vienen en el idioma de la ontología cargada; no se traducen.
+  const formatValue = (value?: string) => value ?? '—'
 
   return (
     <div className="vet-table-wrap">
@@ -210,7 +177,7 @@ interface AnimalesPageProps {
 
 export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
   const t = useTranslations(lang);
-  const { store, loading: ontologyLoading, error: ontologyError } = useOntology();
+  const { store, loading: ontologyLoading, error: ontologyError } = useOntology(lang);
   const { schema, loading: schemaLoading } = useOntologySchema(store);
   const entityMap = useEntityMap(store, schema);
 
@@ -248,13 +215,14 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
       const parsed = parseQuery(search, entityMap, schema);
       const { query: sparql, resolvedMode } = buildQuery(parsed, schema);
 
-      console.group(`[AnimalesPage] Búsqueda: "${search}"`)
-      console.log('parseQuery →', { searchMode: parsed.searchMode, resolvedMode, contexts: parsed.entityContexts })
+      if (import.meta.env.DEV) {
+        console.group(`[AnimalesPage] Búsqueda: "${search}"`)
+        console.log('parseQuery →', { searchMode: parsed.searchMode, resolvedMode, contexts: parsed.entityContexts })
+      }
 
       runQuery(store, sparql)
         .then(results => {
-          console.log(`runQuery → ${results.length} resultados`, results)
-          console.groupEnd()
+          if (import.meta.env.DEV) { console.log(`runQuery → ${results.length} resultados`, results); console.groupEnd() }
           setSparqlResults(results);
           setQueryMeta({
             searchMode: resolvedMode,
@@ -265,8 +233,7 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
           });
         })
         .catch((err) => {
-          console.error('[AnimalesPage] runQuery error:', err);
-          console.groupEnd();
+          if (import.meta.env.DEV) { console.error('[AnimalesPage] runQuery error:', err); console.groupEnd() }
           setSparqlResults([]);
           setQueryMeta(null);
         })
@@ -275,6 +242,8 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
 
     return () => { if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current); };
   }, [search, store, schema, entityMap]);
+
+  const noSearch = search.trim() === '';
 
   const isAnimalTableMode =
     (queryMeta?.searchMode === 'entity' || queryMeta?.searchMode === 'fallback') &&
@@ -319,6 +288,23 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
     return { relationalAnimals: filtered, enfermedadOverride: override };
   }, [isAnimalRelationalMode, sparqlResults, animales, especieFilter]);
 
+  const visibleAnimals = useMemo<Individual[] | null>(() => {
+    if (noSearch && especieFilter) return animalesPorEspecie;
+    if (isAnimalRelationalMode) return relationalAnimals;
+    if (isAnimalTableMode) return displayAnimals;
+    return null;
+  }, [noSearch, especieFilter, animalesPorEspecie, isAnimalRelationalMode, relationalAnimals, isAnimalTableMode, displayAnimals]);
+
+  const footerText = useMemo(() => {
+    if (!visibleAnimals) return '';
+    if (noSearch && especieFilter) {
+      return `${visibleAnimals.length} ${t.footerAnimals} · ${especieFilter}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`;
+    }
+    return `${visibleAnimals.length} ${t.footerOf ?? 'de'} ${animales.length} ${t.footerAnimals}${especieFilter ? ` · ${especieFilter}` : ''}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`;
+  }, [visibleAnimals, noSearch, especieFilter, animales.length, selected, lang, t]);
+
+  const overrideMap = isAnimalRelationalMode ? enfermedadOverride : undefined;
+
   if (ontologyLoading || schemaLoading || queryLoading) {
     return (
       <div className="vet-state">
@@ -331,8 +317,6 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
   if (ontologyError) {
     return <div className="vet-state vet-state--error">Error: {ontologyError}</div>;
   }
-
-  const noSearch = search.trim() === '';
 
   return (
     <>
@@ -364,7 +348,7 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
           </div>
           <select className="vet-select" value={especieFilter} onChange={e => setEspecieFilter(e.target.value)}>
             <option value="">{t.allSpecies}</option>
-            {especies.map(esp => <option key={esp} value={esp}>{translateDomainValue(esp, lang)}</option>)}
+            {especies.map(esp => <option key={esp} value={esp}>{esp}</option>)}
           </select>
         </div>
 
@@ -373,41 +357,17 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
         {noSearch && !especieFilter ? (
           <div className="vet-empty-state" />
 
-        ) : noSearch && especieFilter ? (
-          <div className="vet-layout">
-            <AnimalTable
-              animales={animalesPorEspecie}
-              selected={selected}
-              onSelect={setSelected}
-              footer={`${animalesPorEspecie.length} ${t.footerAnimals} · ${translateDomainValue(especieFilter, lang)}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`}
-              lang={lang}
-            />
-            {selected && <AnimalDrawer animal={selected} onClose={() => setSelected(null)} lang={lang} />}
-          </div>
-
         ) : intelligentLoading ? (
           <div className="vet-state"><span className="vet-spinner" />{t.loadingSparql}</div>
 
-        ) : isAnimalRelationalMode ? (
+        ) : visibleAnimals !== null ? (
           <div className="vet-layout">
             <AnimalTable
-              animales={relationalAnimals}
+              animales={visibleAnimals}
               selected={selected}
               onSelect={setSelected}
-              enfermedadOverride={enfermedadOverride}
-              footer={`${relationalAnimals.length} ${t.footerOf ?? 'de'} ${animales.length} ${t.footerAnimals}${especieFilter ? ` · ${translateDomainValue(especieFilter, lang)}` : ''}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`}
-              lang={lang}
-            />
-            {selected && <AnimalDrawer animal={selected} onClose={() => setSelected(null)} lang={lang} />}
-          </div>
-
-        ) : isAnimalTableMode ? (
-          <div className="vet-layout">
-            <AnimalTable
-              animales={displayAnimals}
-              selected={selected}
-              onSelect={setSelected}
-              footer={`${displayAnimals.length} ${t.footerOf ?? 'de'} ${animales.length} ${t.footerAnimals}${especieFilter ? ` · ${translateDomainValue(especieFilter, lang)}` : ''}${selected ? ` · ${t.footerClickClose}` : ` · ${t.footerClickDetail}`}`}
+              enfermedadOverride={overrideMap}
+              footer={footerText}
               lang={lang}
             />
             {selected && <AnimalDrawer animal={selected} onClose={() => setSelected(null)} lang={lang} />}
