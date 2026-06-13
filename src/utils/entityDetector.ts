@@ -56,39 +56,6 @@ function registerClassTerms(map: Map<string, string>, className: string) {
   }
 }
 
-// Extra multilingual terms for class names (ES/EN/PT)
-const MULTILINGUAL_CLASS_MAP: Record<string, string> = {
-  // Animal
-  pet: 'Animal', pets: 'Animal', mascota: 'Animal', mascotas: 'Animal',
-  mascote: 'Animal', mascotes: 'Animal',
-  // Enfermedad
-  disease: 'Enfermedad', diseases: 'Enfermedad',
-  illness: 'Enfermedad', illnesses: 'Enfermedad',
-  doença: 'Enfermedad', doenças: 'Enfermedad', doenca: 'Enfermedad',
-  // Medicamento
-  medication: 'Medicamento', medications: 'Medicamento',
-  drug: 'Medicamento', drugs: 'Medicamento',
-  medicine: 'Medicamento', medicines: 'Medicamento',
-  // Veterinario
-  veterinarian: 'Veterinario', veterinary: 'Veterinario',
-  // Consulta
-  appointment: 'Consulta', appointments: 'Consulta', consultation: 'Consulta',
-  // Vacunacion
-  vaccine: 'Vacunacion', vaccines: 'Vacunacion', vaccination: 'Vacunacion',
-  vacinação: 'Vacunacion', vacinacao: 'Vacunacion', vacina: 'Vacunacion',
-  // Tratamiento
-  treatment: 'Tratamiento', treatments: 'Tratamiento',
-  tratamento: 'Tratamiento', tratamentos: 'Tratamiento',
-  // ExamenMedico
-  exam: 'ExamenMedico', examination: 'ExamenMedico',
-  exame: 'ExamenMedico', exames: 'ExamenMedico',
-  // Cirugia
-  surgery: 'Cirugia', surgeries: 'Cirugia', operation: 'Cirugia',
-  cirurgia: 'Cirugia', cirurgias: 'Cirugia',
-  // Dueno
-  owner: 'Dueno', owners: 'Dueno',
-  dono: 'Dueno', donos: 'Dueno', proprietário: 'Dueno', proprietario: 'Dueno',
-}
 
 function addToValueMap(
   map: Map<string, PropertyValueMatch[]>,
@@ -156,13 +123,6 @@ export async function buildEntityMap(_store: Store, schema: OntologySchema): Pro
         registerPropertyValue(termToPropertyValue, val, cls.localName, prop.localName, incomingCount)
       }
     }
-  }
-
-  // Register multilingual class terms
-  for (const [term, cls] of Object.entries(MULTILINGUAL_CLASS_MAP)) {
-    addToClassMap(termToClass, term, cls)
-    const s = stem(term)
-    if (s) addToClassMap(termToClass, s, cls)
   }
 
   // Post-process: resolve cross-class conflicts

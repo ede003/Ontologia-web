@@ -1,7 +1,6 @@
 import { StemmerEs, StopwordsEs, TokenizerEs } from '@nlpjs/lang-es'
 import type { ClassSchema, OntologySchema } from '../services/schemaDiscovery'
 import type { EntityMap, PropertyValueMatch } from './entityDetector'
-import { searchTermTranslations } from '../i18n/translations'
 
 const stemmer = new StemmerEs()
 stemmer.stopwords = new StopwordsEs()
@@ -142,20 +141,14 @@ function longestMatch(tokens: string[], map: EntityMap): TokenMatch | null {
   return null
 }
 
-// Traduce términos EN/PT → ES antes de procesar
-function translateInput(input: string): string {
-  const lower = input.toLowerCase().trim()
-  if (searchTermTranslations[lower]) return searchTermTranslations[lower]
-  return lower.split(' ').map(word => searchTermTranslations[word] ?? word).join(' ')
-}
-
 export function parseQuery(
   rawInput: string,
   entityMap: EntityMap,
   schema: OntologySchema | null,
 ): ParsedQuery {
-  const translated = translateInput(rawInput)
-  const lower = translated.toLowerCase().trim()
+  // La ontología activa ya está en el idioma del usuario; el término se procesa
+  // tal cual, sin traducción intermedia.
+  const lower = rawInput.toLowerCase().trim()
   const allTokens = tokenizer.tokenize(lower, true)
   const terms = stopwords.removeStopwords(allTokens)
   const stemmed = stemmer.tokenizeAndStem(lower, false)
