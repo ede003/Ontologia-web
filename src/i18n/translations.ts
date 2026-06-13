@@ -288,6 +288,7 @@ const domainValueTranslations: Record<Language, Record<string, string>> = {
     'cerdo': 'Pig',
     'cobaya': 'Guinea pig',
     'caballo': 'Horse',    'caballos': 'Horses',
+    'Canina': 'Canine',       'canina': 'Canine',
  
     //Razas
     'Labrador': 'Labrador',           'labrador': 'Labrador',
@@ -380,6 +381,9 @@ const domainValueTranslations: Record<Language, Record<string, string>> = {
     'Erisipela Porcina': 'Porcine Erysipelas',
     'Parvovirus Porcino': 'Porcine Parvovirus',
     'Hipoglucemia Porcina': 'Porcine Hypoglycemia',
+    'Traqueobronquitis': 'Tracheobronchitis', 'traqueobronquitis': 'Tracheobronchitis',
+    'Encefalitis': 'Encephalitis', 'encefalitis': 'Encephalitis',
+    'Aspergilosis': 'Aspergillosis', 'aspergilosis': 'Aspergillosis',
  
     //Palabras sueltas de enfermedades
     'moquillo': 'Distemper',
@@ -407,9 +411,6 @@ const domainValueTranslations: Record<Language, Record<string, string>> = {
     'leucemia': 'Leukemia',
     'influenza': 'Influenza',
     'rinitis': 'Rhinitis',
-    'encefalitis': 'Encephalitis',
-    'aspergilosis': 'Aspergillosis',
-    'traqueobronquitis': 'Tracheobronchitis',
     'otitis': 'Otitis',
     'sarna': 'Mange',
     'bacteriana': 'Bacterial', 'bacteriano': 'Bacterial',
