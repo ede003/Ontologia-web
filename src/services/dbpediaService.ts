@@ -1,6 +1,7 @@
 // Sends SPARQL to es.dbpedia.org and returns raw binding rows.
 // Each row is a plain Record<variable, value> — no intermediate typed objects.
-const ENDPOINT = 'https://es.dbpedia.org/sparql';
+// English endpoint — Lookup API returns english-dbpedia URIs; es.dbpedia.org has poor coverage of them
+const ENDPOINT = 'https://dbpedia.org/sparql';
 const TIMEOUT_MS = 8000;
 
 export async function queryDBpedia(sparql: string): Promise<Record<string, string>[]> {

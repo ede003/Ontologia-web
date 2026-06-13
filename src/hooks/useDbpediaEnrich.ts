@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { type Individual } from '../services/ontologyService';
 import { getAnimalInfo } from '../repositories/dbpediaRepository';
 
-// Session cache: key = "especie|raza" → raw SPARQL binding rows
+// Session cache: key = "especie|raza|lang" → raw SPARQL binding rows
 const _cache = new Map<string, Record<string, string>[]>();
 
 export interface UseDbpediaEnrichResult {
@@ -26,48 +26,43 @@ export function useDbpediaEnrich(animal: Individual | null, lang = 'es'): UseDbp
     }
 
     const key = `${especie}|${raza}|${lang}`;
-    console.log(`[useDbpediaEnrich] animal activo — especie="${especie}" raza="${raza}" lang="${lang}" cacheKey="${key}"`)
+    if (import.meta.env.DEV) console.log(`[useDbpediaEnrich] especie="${especie}" raza="${raza}" lang="${lang}" cacheKey="${key}"`)
 
     if (_cache.has(key)) {
       const cached = _cache.get(key)!;
-      console.log(`[useDbpediaEnrich] Cache HIT (${cached.length} filas)`)
+      if (import.meta.env.DEV) console.log(`[useDbpediaEnrich] Cache HIT (${cached.length} filas)`)
       setEnriched(cached.length > 0 ? cached : null);
       setLoading(false);
       return;
     }
 
-    console.log('[useDbpediaEnrich] Cache MISS → llamando getAnimalInfo')
+    if (import.meta.env.DEV) console.log('[useDbpediaEnrich] Cache MISS → llamando getAnimalInfo')
     let cancelled = false;
     setLoading(true);
     setEnriched(null);
 
-    getAnimalInfo(especie, raza, lang).then(rows => {
-      if (cancelled) return;
-      console.log(`[useDbpediaEnrich] getAnimalInfo resolvió: ${rows.length} filas`)
-
-      // Si no hay resultado en el idioma pedido, intenta con español como respaldo
-      if (rows.length === 0 && lang !== 'es') {
-        const fallbackKey = `${especie}|${raza}|es`;
-        if (_cache.has(fallbackKey)) {
-          const fallback = _cache.get(fallbackKey)!;
-          _cache.set(key, fallback);
-          setEnriched(fallback.length > 0 ? fallback : null);
-          setLoading(false);
-          return;
+    // Try the requested lang, then fall back to 'es'. Iterate over deduped list.
+    const langs = lang === 'es' ? ['es'] : [lang, 'es'];
+    ;(async () => {
+      try {
+        let rows: Record<string, string>[] = [];
+        for (const l of langs) {
+          const k = `${especie}|${raza}|${l}`;
+          if (_cache.has(k)) {
+            rows = _cache.get(k)!;
+          } else {
+            rows = await getAnimalInfo(especie, raza, l);
+            _cache.set(k, rows);
+          }
+          if (rows.length > 0 || l === 'es') break;
         }
-        return getAnimalInfo(especie, raza, 'es').then(fallbackRows => {
-          if (cancelled) return;
-          _cache.set(key, fallbackRows);
-          _cache.set(fallbackKey, fallbackRows);
-          setEnriched(fallbackRows.length > 0 ? fallbackRows : null);
-          setLoading(false);
-        });
+        // Ensure the original (lang) key is always cached
+        _cache.set(key, rows);
+        if (!cancelled) setEnriched(rows.length > 0 ? rows : null);
+      } finally {
+        setLoading(false);
       }
-
-      _cache.set(key, rows);
-      setEnriched(rows.length > 0 ? rows : null);
-      setLoading(false);
-    });
+    })();
 
     return () => { cancelled = true; };
   }, [active, especie, raza, lang]);
