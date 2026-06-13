@@ -77,7 +77,16 @@ OPTIONAL {
   const stream = await engine.queryBindings(sparql, { sources: [store] });
   const rows = await stream.toArray();
 
-  const bySubject = new Map<string, Record<string, string>>();
+  // Los múltiples OPTIONAL generan un producto cartesiano (cada propiedad del
+  // animal × cada enfermedad/dueño/vet), por lo que un mismo nombre aparece en
+  // muchas filas. Deduplicamos con Set por animal antes de concatenar.
+  interface Agg {
+    props: Record<string, string>;
+    enfermedades: Set<string>;
+    dueno: Set<string>;
+    veterinario: Set<string>;
+  }
+  const bySubject = new Map<string, Agg>();
 
   for (const row of rows) {
     const animal = row.get('animal')?.value;
@@ -88,26 +97,26 @@ OPTIONAL {
     const nombreVeterinario = row.get('nombreVeterinario')?.value;
 
     if (!animal) continue;
-    if (!bySubject.has(animal)) bySubject.set(animal, {});
+    if (!bySubject.has(animal)) {
+      bySubject.set(animal, { props: {}, enfermedades: new Set(), dueno: new Set(), veterinario: new Set() });
+    }
+    const agg = bySubject.get(animal)!;
 
     if (predicate && object) {
-      bySubject.get(animal)![localName(predicate)] = object;
+      agg.props[localName(predicate)] = object;
     }
-
-    if (nombreEnfermedad) {
-  bySubject.get(animal)!.enfermedades = nombreEnfermedad;
-}
-
-if (nombreDueno) {
-  bySubject.get(animal)!.dueno = nombreDueno;
-}
-
-if (nombreVeterinario) {
-  bySubject.get(animal)!.veterinario = nombreVeterinario;
-}
+    if (nombreEnfermedad) agg.enfermedades.add(nombreEnfermedad);
+    if (nombreDueno) agg.dueno.add(nombreDueno);
+    if (nombreVeterinario) agg.veterinario.add(nombreVeterinario);
   }
 
-  const animales = Array.from(bySubject.entries()).map(([uri, props]) => ({ uri, props }));
+  const animales = Array.from(bySubject.entries()).map(([uri, agg]) => {
+    const props = agg.props;
+    if (agg.enfermedades.size) props.enfermedades = [...agg.enfermedades].join(', ');
+    if (agg.dueno.size) props.dueno = [...agg.dueno].join(', ');
+    if (agg.veterinario.size) props.veterinario = [...agg.veterinario].join(', ');
+    return { uri, props };
+  });
   console.log(`[ontologyRepository] getAnimales → ${animales.length} animales cargados`);
   if (animales.length > 0) {
     const sample = animales[0];

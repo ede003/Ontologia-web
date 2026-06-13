@@ -1,11 +1,20 @@
 import { Store, DataFactory } from 'n3';
+import type { Language } from '../i18n/translations';
 
 const { namedNode, literal } = DataFactory;
 
 const VET_NS  = 'http://www.semanticweb.org/grupo14/ontologias/veterinaria#';
 const RDF_NS  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
 const OWL_NS  = 'http://www.w3.org/2002/07/owl#';
-const ONTOLOGY_PATH = '/ontologia/Ontologia_Veterinaria_DEPURADA.rdf';
+
+// Una ontología por idioma: el frontend hace de proxy y carga la que
+// corresponde al idioma seleccionado. Cada archivo trae los datos ya en su
+// idioma, de modo que la búsqueda es hermética por construcción.
+const ONTOLOGY_PATHS: Record<Language, string> = {
+  es: '/ontologia/ontologia_veterinaria_es.rdf',
+  en: '/ontologia/ontologia_veterinaria_en.rdf',
+  pt: '/ontologia/ontologia_veterinaria_pt.rdf',
+};
 
 export interface Individual {
   uri: string;
@@ -22,8 +31,8 @@ const OWL_NAMED_INDIVIDUAL = OWL_NS + 'NamedIndividual';
 
 // Parses the RDF/XML file with the browser's native DOMParser and populates an
 // n3 Store. Individuals are rdf:Description elements whose first rdf:type is owl:NamedIndividual.
-export async function loadOntology(): Promise<Store> {
-  const res = await fetch(ONTOLOGY_PATH);
+export async function loadOntology(lang: Language): Promise<Store> {
+  const res = await fetch(ONTOLOGY_PATHS[lang]);
   if (!res.ok) throw new Error(`No se pudo cargar la ontología: ${res.status}`);
   const text = await res.text();
 
