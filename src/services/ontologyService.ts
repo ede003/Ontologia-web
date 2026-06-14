@@ -6,15 +6,14 @@ const { namedNode, literal } = DataFactory;
 const VET_NS  = 'http://www.semanticweb.org/grupo14/ontologias/veterinaria#';
 const RDF_NS  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
 const OWL_NS  = 'http://www.w3.org/2002/07/owl#';
+const XML_NS  = 'http://www.w3.org/XML/1998/namespace';
 
-// Una ontología por idioma: el frontend hace de proxy y carga la que
-// corresponde al idioma seleccionado. Cada archivo trae los datos ya en su
-// idioma, de modo que la búsqueda es hermética por construcción.
-const ONTOLOGY_PATHS: Record<Language, string> = {
-  es: '/ontologia/ontologia_veterinaria_es.rdf',
-  en: '/ontologia/ontologia_veterinaria_en.rdf',
-  pt: '/ontologia/ontologia_veterinaria_pt.rdf',
-};
+// Única fuente de datos: una sola ontología multilingüe. Los rdfs:label traen
+// variantes xml:lang="es|en|pt" y se preservan como literales con etiqueta de
+// idioma, de modo que las consultas SPARQL puedan filtrar con
+// FILTER(lang(?label) = "<idioma>"). El idioma activo se aplica en las queries,
+// no al cargar el archivo.
+const ONTOLOGY_PATH = '/ontologia/ontologia_veterinaria_multilingue.rdf';
 
 export interface Individual {
   uri: string;
@@ -28,11 +27,47 @@ function normalizeIri(iri: string): string {
 }
 
 const OWL_NAMED_INDIVIDUAL = OWL_NS + 'NamedIndividual';
+const OWL_CLASS             = OWL_NS + 'Class';
+const OWL_DATATYPE_PROPERTY = OWL_NS + 'DatatypeProperty';
+const OWL_OBJECT_PROPERTY   = OWL_NS + 'ObjectProperty';
+
+const SCHEMA_TYPES = new Set([OWL_CLASS, OWL_DATATYPE_PROPERTY, OWL_OBJECT_PROPERTY]);
+
+function hasTypeResource(desc: Element, typeIri: string): boolean {
+  return Array.from(desc.children).some(
+    child => child.getAttributeNS(RDF_NS, 'resource') === typeIri
+  );
+}
+
+function loadDescription(desc: Element, store: Store): void {
+  const aboutAttr = desc.getAttributeNS(RDF_NS, 'about');
+  if (!aboutAttr) return;
+  const subj = namedNode(normalizeIri(aboutAttr));
+
+  for (const child of Array.from(desc.children)) {
+    const predNs = child.namespaceURI;
+    const predLocal = child.localName;
+    if (!predNs || !predLocal) continue;
+
+    const pred = namedNode(predNs + predLocal);
+    const resourceRef = child.getAttributeNS(RDF_NS, 'resource');
+
+    if (resourceRef !== null) {
+      store.addQuad(subj, pred, namedNode(normalizeIri(resourceRef)));
+    } else {
+      const xmlLang = child.getAttributeNS(XML_NS, 'lang');
+      const text = child.textContent ?? '';
+      store.addQuad(subj, pred, xmlLang ? literal(text, xmlLang) : literal(text));
+    }
+  }
+}
 
 // Parses the RDF/XML file with the browser's native DOMParser and populates an
-// n3 Store. Individuals are rdf:Description elements whose first rdf:type is owl:NamedIndividual.
+// n3 Store. Loads both NamedIndividual instances and class/property schema
+// declarations (for their multilingual rdfs:label triples).
 export async function loadOntology(lang: Language): Promise<Store> {
-  const res = await fetch(ONTOLOGY_PATHS[lang]);
+  console.log(`[ontologyService] Cargando ontología multilingüe (idioma activo: ${lang})`);
+  const res = await fetch(ONTOLOGY_PATH);
   if (!res.ok) throw new Error(`No se pudo cargar la ontología: ${res.status}`);
   const text = await res.text();
 
@@ -42,37 +77,21 @@ export async function loadOntology(lang: Language): Promise<Store> {
 
   const store = new Store();
 
-  // The file uses <rdf:Description rdf:about="..."><rdf:type rdf:resource="owl:NamedIndividual"/>...
-  // instead of <owl:NamedIndividual rdf:about="...">
-  const descriptions = doc.getElementsByTagNameNS(RDF_NS, 'Description');
-  const individuals = Array.from(descriptions).filter(desc =>
-    Array.from(desc.children).some(
-      child => child.getAttributeNS(RDF_NS, 'resource') === OWL_NAMED_INDIVIDUAL
-    )
-  );
-  console.log(`[ontologyService] rdf:Description totales: ${descriptions.length}, NamedIndividuals filtrados: ${individuals.length}`);
+  const descriptions = Array.from(doc.getElementsByTagNameNS(RDF_NS, 'Description'));
 
-  for (const ind of individuals) {
-    const aboutAttr = ind.getAttributeNS(RDF_NS, 'about');
-    if (!aboutAttr) continue;
-    const subj = namedNode(normalizeIri(aboutAttr));
+  let individualCount = 0;
+  let schemaCount = 0;
 
-    for (const child of Array.from(ind.children)) {
-      const predNs = child.namespaceURI;
-      const predLocal = child.localName;
-      if (!predNs || !predLocal) continue;
-
-      const pred = namedNode(predNs + predLocal);
-      const resourceRef = child.getAttributeNS(RDF_NS, 'resource');
-
-      if (resourceRef !== null) {
-        store.addQuad(subj, pred, namedNode(normalizeIri(resourceRef)));
-      } else {
-        store.addQuad(subj, pred, literal(child.textContent ?? ''));
-      }
+  for (const desc of descriptions) {
+    if (hasTypeResource(desc, OWL_NAMED_INDIVIDUAL)) {
+      loadDescription(desc, store);
+      individualCount++;
+    } else if (Array.from(desc.children).some(c => SCHEMA_TYPES.has(c.getAttributeNS(RDF_NS, 'resource') ?? ''))) {
+      loadDescription(desc, store);
+      schemaCount++;
     }
   }
 
-  console.log(`[ontologyService] Store cargado con ${store.size} triples`);
+  console.log(`[ontologyService] Store cargado con ${store.size} triples (${individualCount} individuos, ${schemaCount} declaraciones de clase/propiedad)`);
   return store;
 }
