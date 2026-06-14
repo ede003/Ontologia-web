@@ -57,6 +57,7 @@ export interface Translations {
   drawerFieldOwner: string;
   drawerFieldVeterinarian: string;
   drawerClose: string;          // aria-label del botón ×
+  drawerNetworkError: string;   // DBpedia inalcanzable (sin red)
 
   tableOwner: string;
   tableVeterinarian: string;
@@ -128,6 +129,7 @@ const es: Translations = {
   drawerFieldOwner: 'Dueño',
   drawerFieldVeterinarian: 'Veterinario',
   drawerClose: 'Cerrar',
+  drawerNetworkError: 'DBpedia no disponible (sin conexión).',
 
   tableOwner: 'Dueño',
   tableVeterinarian: 'Veterinario',
@@ -195,6 +197,7 @@ const en: Translations = {
   drawerFieldOwner: 'Owner',
   drawerFieldVeterinarian: 'Veterinarian',
   drawerClose: 'Close',
+  drawerNetworkError: 'DBpedia unavailable (no connection).',
 
   tableOwner: 'Owner',
   tableVeterinarian: 'Veterinarian',
@@ -262,6 +265,7 @@ const pt: Translations = {
   drawerFieldOwner: 'Dono',
   drawerFieldVeterinarian: 'Veterinário',
   drawerClose: 'Fechar',
+  drawerNetworkError: 'DBpedia indisponível (sem conexão).',
 
   tableOwner: 'Dono',
   tableVeterinarian: 'Veterinário',

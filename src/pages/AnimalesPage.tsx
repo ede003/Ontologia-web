@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useRef, Fragment } from 'react';
+import type { Store } from 'n3';
 import { useOntology } from '../hooks/useOntology';
 import { useOntologySchema } from '../hooks/useOntologySchema';
 import { useDbpediaEnrich } from '../hooks/useDbpediaEnrich';
@@ -21,11 +22,12 @@ interface DrawerProps {
   animal: Individual;
   onClose: () => void;
   lang: Language;
+  store?: Store;
 }
 
-function AnimalDrawer({ animal, onClose, lang }: DrawerProps) {
+function AnimalDrawer({ animal, onClose, lang, store }: DrawerProps) {
   const t = useTranslations(lang);
-  const { enriched, loading } = useDbpediaEnrich(animal, lang);
+  const { enriched, loading, networkError } = useDbpediaEnrich(animal, lang, store);
   const p = animal.props;
 
   // Los datos ya vienen en el idioma de la ontología cargada; no se traducen.
@@ -66,7 +68,11 @@ function AnimalDrawer({ animal, onClose, lang }: DrawerProps) {
 
         {loading && <p className="vet-drawer__muted">{t.drawerConsultingDbpedia}</p>}
 
-        {!loading && enriched && enriched.length > 0 && (() => {
+        {!loading && networkError && (
+          <p className="vet-drawer__muted">{t.drawerNetworkError}</p>
+        )}
+
+        {!loading && !networkError && enriched && enriched.length > 0 && (() => {
           const row = enriched[0];
           return (
             <>
@@ -98,7 +104,7 @@ function AnimalDrawer({ animal, onClose, lang }: DrawerProps) {
           );
         })()}
 
-        {!loading && (!enriched || enriched.length === 0) && (
+        {!loading && !networkError && (!enriched || enriched.length === 0) && (
           <p className="vet-drawer__muted">{t.drawerNoDbpedia}</p>
         )}
       </div>
@@ -192,6 +198,8 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
   const [queryMeta, setQueryMeta]                   = useState<QueryMeta | null>(null);
   const [intelligentLoading, setIntelligentLoading] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => { setSelected(null); }, [lang]);
 
   useEffect(() => {
     if (!store) return;
@@ -370,7 +378,7 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
               footer={footerText}
               lang={lang}
             />
-            {selected && <AnimalDrawer animal={selected} onClose={() => setSelected(null)} lang={lang} />}
+            {selected && <AnimalDrawer animal={selected} onClose={() => setSelected(null)} lang={lang} store={store ?? undefined} />}
           </div>
 
         ) : sparqlResults !== null && queryMeta !== null ? (

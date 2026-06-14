@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
+import type { Store } from 'n3';
 import { type Individual } from '../services/ontologyService';
 import { getAnimalInfo } from '../repositories/dbpediaRepository';
+import { DbpediaNetworkError } from '../services/dbpediaService';
+
+const VET_NS = 'http://www.semanticweb.org/grupo14/ontologias/veterinaria#'
 
 // Session cache: key = "especie|raza|lang" → raw SPARQL binding rows
 const _cache = new Map<string, Record<string, string>[]>();
@@ -8,20 +12,33 @@ const _cache = new Map<string, Record<string, string>[]>();
 export interface UseDbpediaEnrichResult {
   enriched: Record<string, string>[] | null;
   loading: boolean;
+  networkError: boolean;
 }
 
-export function useDbpediaEnrich(animal: Individual | null, lang = 'es'): UseDbpediaEnrichResult {
-  const especie = animal?.props.especie ?? '';
-  const raza    = animal?.props.raza    ?? '';
+// Look up a single English literal for an animal URI and vet: property.
+// The store always contains all language variants; English gives better DBpedia Lookup coverage.
+function getEnLiteral(store: Store, uri: string, prop: string): string {
+  return store.getQuads(uri, VET_NS + prop, null, null)
+    .find(q => q.object.termType === 'Literal' && q.object.language === 'en')
+    ?.object.value ?? ''
+}
+
+export function useDbpediaEnrich(animal: Individual | null, lang = 'es', store?: Store): UseDbpediaEnrichResult {
+  // Always use English prop values for the DBpedia Lookup API (better coverage than Spanish terms).
+  // Falls back to active-lang props if the English literal isn't present.
+  const especie = (store && animal ? getEnLiteral(store, animal.uri, 'especie') : '') || animal?.props.especie ?? '';
+  const raza    = (store && animal ? getEnLiteral(store, animal.uri, 'raza')    : '') || animal?.props.raza    ?? '';
   const active  = animal !== null;
 
-  const [enriched, setEnriched] = useState<Record<string, string>[] | null>(null);
-  const [loading, setLoading]   = useState(false);
+  const [enriched, setEnriched]         = useState<Record<string, string>[] | null>(null);
+  const [loading, setLoading]           = useState(false);
+  const [networkError, setNetworkError] = useState(false);
 
   useEffect(() => {
     if (!active) {
       setEnriched(null);
       setLoading(false);
+      setNetworkError(false);
       return;
     }
 
@@ -32,6 +49,7 @@ export function useDbpediaEnrich(animal: Individual | null, lang = 'es'): UseDbp
       const cached = _cache.get(key)!;
       if (import.meta.env.DEV) console.log(`[useDbpediaEnrich] Cache HIT (${cached.length} filas)`)
       setEnriched(cached.length > 0 ? cached : null);
+      setNetworkError(false);
       setLoading(false);
       return;
     }
@@ -40,6 +58,7 @@ export function useDbpediaEnrich(animal: Individual | null, lang = 'es'): UseDbp
     let cancelled = false;
     setLoading(true);
     setEnriched(null);
+    setNetworkError(false);
 
     // Try the requested lang, then fall back to 'es'. Iterate over deduped list.
     const langs = lang === 'es' ? ['es'] : [lang, 'es'];
@@ -59,13 +78,15 @@ export function useDbpediaEnrich(animal: Individual | null, lang = 'es'): UseDbp
         // Ensure the original (lang) key is always cached
         _cache.set(key, rows);
         if (!cancelled) setEnriched(rows.length > 0 ? rows : null);
+      } catch (err) {
+        if (err instanceof DbpediaNetworkError && !cancelled) setNetworkError(true);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
 
     return () => { cancelled = true; };
   }, [active, especie, raza, lang]);
 
-  return { enriched, loading };
+  return { enriched, loading, networkError };
 }
