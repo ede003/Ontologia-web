@@ -1,11 +1,18 @@
 import { StemmerEs, StopwordsEs, TokenizerEs } from '@nlpjs/lang-es'
 import type { ClassSchema, OntologySchema } from '../services/schemaDiscovery'
 import type { EntityMap, PropertyValueMatch } from './entityDetector'
+import type { Language } from '../i18n/translations'
 
 const stemmer = new StemmerEs()
 stemmer.stopwords = new StopwordsEs()
 const tokenizer = new TokenizerEs()
 const stopwords = new StopwordsEs()
+
+// Simple tokenizer for languages without dedicated NLP package.
+// Splits on non-letter/non-digit boundaries, lowercases, filters short tokens.
+function basicTokenize(text: string): string[] {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(t => t.length > 1)
+}
 
 export type MatchType = 'exact' | 'contains' | 'numeric'
 
@@ -145,16 +152,23 @@ export function parseQuery(
   rawInput: string,
   entityMap: EntityMap,
   schema: OntologySchema | null,
+  lang: Language = 'es',
 ): ParsedQuery {
-  // La ontología activa ya está en el idioma del usuario; el término se procesa
-  // tal cual, sin traducción intermedia.
   const lower = rawInput.toLowerCase().trim()
-  const allTokens = tokenizer.tokenize(lower, true)
-  const terms = stopwords.removeStopwords(allTokens)
-  const stemmed = stemmer.tokenizeAndStem(lower, false)
+
+  // Use Spanish NLP for 'es'; for other languages use a simple whitespace
+  // tokenizer (no wrong-language stemming, no Spanish stopword removal).
+  const isSpanish = lang === 'es'
+  const allTokens: string[] = isSpanish
+    ? tokenizer.tokenize(lower, true)
+    : basicTokenize(lower)
+  const terms: string[] = isSpanish ? stopwords.removeStopwords(allTokens) : [...allTokens]
+  const stemmed: string[] = isSpanish ? stemmer.tokenizeAndStem(lower, false) : []
 
   // Step 1 — Extraer edad y sexo (patrones de lenguaje, no ontología)
-  let workingTokens = stopwords.removeStopwords([...allTokens]).filter(t => t.length > 0)
+  let workingTokens = isSpanish
+    ? stopwords.removeStopwords([...allTokens]).filter(t => t.length > 0)
+    : [...allTokens]
   const { age, remaining: afterAge } = extractAge(workingTokens)
   workingTokens = afterAge
   const { sexo, remaining: afterSexo } = extractSexo(workingTokens)
