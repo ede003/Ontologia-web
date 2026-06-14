@@ -114,14 +114,15 @@ export async function getAnimalInfo(
 
   if (rows.length > 0) {
     const row = rows[0]
-    // Prefer the Lookup snippet over a short dbo:description ("cat breed")
-    if (lookupComment && (!row.abstract || row.abstract.length < lookupComment.length)) {
+    // Only use the Lookup snippet (always English) when the data endpoint returned no abstract.
+    // Replacing a correctly-localised abstract with an English fallback would break lang switching.
+    if (lookupComment && !row.abstract) {
       return [{ ...row, abstract: lookupComment }, ...rows.slice(1)]
     }
     return rows
   }
 
-  // Data endpoint returned nothing — build a minimal row from Lookup snippet
+  // Data endpoint returned nothing — build a minimal row from Lookup snippet (English fallback)
   if (lookupComment) {
     return [{ dbpediaUri: `http://dbpedia.org/resource/${slug}`, abstract: lookupComment }]
   }

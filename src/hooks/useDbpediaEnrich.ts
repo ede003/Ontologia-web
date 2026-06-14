@@ -9,6 +9,33 @@ const VET_NS = 'http://www.semanticweb.org/grupo14/ontologias/veterinaria#'
 // Session cache: key = "especie|raza|lang" → raw SPARQL binding rows
 const _cache = new Map<string, Record<string, string>[]>();
 
+// ── Persistent cache (localStorage) ──────────────────────────────────────────
+const STORAGE_PREFIX = 'dbpedia_v1:'
+const CACHE_TTL_MS   = 30 * 24 * 60 * 60 * 1000 // 30 days
+
+function loadPersisted(key: string): Record<string, string>[] | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_PREFIX + key)
+    if (!raw) return null
+    const { data, ts } = JSON.parse(raw) as { data: Record<string, string>[]; ts: number }
+    if (Date.now() - ts > CACHE_TTL_MS) {
+      localStorage.removeItem(STORAGE_PREFIX + key)
+      return null
+    }
+    return data
+  } catch {
+    return null
+  }
+}
+
+function savePersisted(key: string, data: Record<string, string>[]): void {
+  try {
+    localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify({ data, ts: Date.now() }))
+  } catch {
+    // Storage full or unavailable (private mode) — degrade gracefully
+  }
+}
+
 export interface UseDbpediaEnrichResult {
   enriched: Record<string, string>[] | null;
   loading: boolean;
@@ -26,8 +53,8 @@ function getEnLiteral(store: Store, uri: string, prop: string): string {
 export function useDbpediaEnrich(animal: Individual | null, lang = 'es', store?: Store): UseDbpediaEnrichResult {
   // Always use English prop values for the DBpedia Lookup API (better coverage than Spanish terms).
   // Falls back to active-lang props if the English literal isn't present.
-  const especie = (store && animal ? getEnLiteral(store, animal.uri, 'especie') : '') || animal?.props.especie ?? '';
-  const raza    = (store && animal ? getEnLiteral(store, animal.uri, 'raza')    : '') || animal?.props.raza    ?? '';
+  const especie = (store && animal ? getEnLiteral(store, animal.uri, 'especie') : '') || (animal?.props.especie ?? '');
+  const raza    = (store && animal ? getEnLiteral(store, animal.uri, 'raza')    : '') || (animal?.props.raza    ?? '');
   const active  = animal !== null;
 
   const [enriched, setEnriched]         = useState<Record<string, string>[] | null>(null);
@@ -47,8 +74,19 @@ export function useDbpediaEnrich(animal: Individual | null, lang = 'es', store?:
 
     if (_cache.has(key)) {
       const cached = _cache.get(key)!;
-      if (import.meta.env.DEV) console.log(`[useDbpediaEnrich] Cache HIT (${cached.length} filas)`)
+      if (import.meta.env.DEV) console.log(`[useDbpediaEnrich] Session cache HIT (${cached.length} filas)`)
       setEnriched(cached.length > 0 ? cached : null);
+      setNetworkError(false);
+      setLoading(false);
+      return;
+    }
+
+    // Check persistent cache before going to the network
+    const persisted = loadPersisted(key);
+    if (persisted !== null) {
+      if (import.meta.env.DEV) console.log(`[useDbpediaEnrich] localStorage HIT (${persisted.length} filas)`)
+      _cache.set(key, persisted);
+      setEnriched(persisted.length > 0 ? persisted : null);
       setNetworkError(false);
       setLoading(false);
       return;
@@ -70,13 +108,21 @@ export function useDbpediaEnrich(animal: Individual | null, lang = 'es', store?:
           if (_cache.has(k)) {
             rows = _cache.get(k)!;
           } else {
-            rows = await getAnimalInfo(especie, raza, l);
-            _cache.set(k, rows);
+            const kPersisted = loadPersisted(k);
+            if (kPersisted !== null) {
+              rows = kPersisted;
+              _cache.set(k, kPersisted);
+            } else {
+              rows = await getAnimalInfo(especie, raza, l);
+              _cache.set(k, rows);
+              savePersisted(k, rows);
+            }
           }
           if (rows.length > 0 || l === 'es') break;
         }
         // Ensure the original (lang) key is always cached
         _cache.set(key, rows);
+        savePersisted(key, rows);
         if (!cancelled) setEnriched(rows.length > 0 ? rows : null);
       } catch (err) {
         if (err instanceof DbpediaNetworkError && !cancelled) setNetworkError(true);
