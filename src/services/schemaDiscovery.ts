@@ -1,7 +1,8 @@
 import type { Store } from 'n3'
 import { runQuery } from '../utils/sparqlExecutor'
 
-const VET_NS = 'http://www.semanticweb.org/grupo14/ontologias/veterinaria#'
+const VET_NS   = 'http://www.semanticweb.org/grupo14/ontologias/veterinaria#'
+const RDFS_LABEL = 'http://www.w3.org/2000/01/rdf-schema#label'
 
 const PREFIXES = `
 PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -14,6 +15,7 @@ export interface PropertySchema {
   localName: string
   fullIri: string
   distinctValues: string[]
+  labels: Record<string, string>  // lang code → display label from rdfs:label
 }
 
 export interface RelationEdge {
@@ -29,18 +31,34 @@ export interface ClassSchema {
   labelProperty: string
   datatypeProps: PropertySchema[]
   objectProps: RelationEdge[]
+  labels: Record<string, string>  // lang code → display label from rdfs:label
 }
 
 export interface OntologySchema {
   classes: Map<string, ClassSchema>
   relations: RelationEdge[]
   adjacency: Map<string, RelationEdge[]>
+  // Flat lookup maps built from class/property rdfs:label declarations
+  classLabelMap: Map<string, Record<string, string>>  // localName → {lang → label}
+  propLabelMap: Map<string, Record<string, string>>   // localName → {lang → label}
 }
 
 function localName(iri: string): string {
   const hash = iri.lastIndexOf('#')
   const slash = iri.lastIndexOf('/')
   return iri.slice(Math.max(hash, slash) + 1)
+}
+
+// Read rdfs:label triples (with xml:lang) from the store for a given IRI.
+// Returns a map of lang code → display string, e.g. { es: "Enfermedad", en: "Disease", pt: "Doença" }
+function extractLabels(store: Store, iri: string): Record<string, string> {
+  const labels: Record<string, string> = {}
+  for (const q of store.getQuads(iri, RDFS_LABEL, null, null)) {
+    if (q.object.termType === 'Literal' && q.object.language) {
+      labels[q.object.language] = q.object.value
+    }
+  }
+  return labels
 }
 
 function isVetIri(iri: string): boolean {
@@ -148,11 +166,16 @@ export async function buildOntologySchema(store: Store): Promise<OntologySchema>
         discoverObjectPredicates(store, classIri),
       ])
 
-      // Step 3: for each datatype predicate, collect distinct values
+      // Step 3: for each datatype predicate, collect distinct values and labels
       const datatypeProps: PropertySchema[] = await Promise.all(
         dtPreds.map(async (predIri): Promise<PropertySchema> => {
           const values = await discoverDistinctValues(store, classIri, predIri)
-          return { localName: localName(predIri), fullIri: predIri, distinctValues: values }
+          return {
+            localName: localName(predIri),
+            fullIri: predIri,
+            distinctValues: values,
+            labels: extractLabels(store, predIri),
+          }
         })
       )
 
@@ -173,6 +196,7 @@ export async function buildOntologySchema(store: Store): Promise<OntologySchema>
         labelProperty,
         datatypeProps,
         objectProps,
+        labels: extractLabels(store, classIri),
       }]
     })
   )
@@ -200,9 +224,22 @@ export async function buildOntologySchema(store: Store): Promise<OntologySchema>
   classes.delete('NamedIndividual')
   classes.delete('Thing')
 
+  // Build flat lookup maps: localName → multilingual labels
+  const classLabelMap = new Map<string, Record<string, string>>()
+  const propLabelMap  = new Map<string, Record<string, string>>()
+
+  for (const [, cls] of classes) {
+    classLabelMap.set(cls.localName, cls.labels)
+    for (const prop of cls.datatypeProps) {
+      if (!propLabelMap.has(prop.localName)) {
+        propLabelMap.set(prop.localName, prop.labels)
+      }
+    }
+  }
+
   console.log(`Schema listo: ${classes.size} clases, ${relations.length} relaciones`)
   console.log('Relaciones:', relations.map(r => `${r.fromClass} --[${r.predicateLocalName}]--> ${r.toClass}`))
   console.groupEnd()
 
-  return { classes, relations, adjacency }
+  return { classes, relations, adjacency, classLabelMap, propLabelMap }
 }
