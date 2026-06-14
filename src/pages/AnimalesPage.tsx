@@ -47,7 +47,7 @@ function AnimalDrawer({ animal, onClose, lang }: DrawerProps) {
   return (
     <aside className="vet-drawer">
       <div className="vet-drawer__header">
-        <h2>{p.nombreAnimal ?? 'Animal'}</h2>
+        <h2>{p.nombreAnimal ?? t.drawerAnimalFallback}</h2>
         <button className="vet-drawer__close" onClick={onClose} aria-label={t.drawerClose}>×</button>
       </div>
 
@@ -196,10 +196,10 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
   useEffect(() => {
     if (!store) return;
     setQueryLoading(true);
-    getAnimales(store)
+    getAnimales(store, lang)
       .then(result => { setAnimales(result); setQueryLoading(false); })
       .catch(() => setQueryLoading(false));
-  }, [store]);
+  }, [store, lang]);
 
   useEffect(() => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
@@ -212,8 +212,8 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
 
     searchDebounceRef.current = setTimeout(() => {
       setIntelligentLoading(true);
-      const parsed = parseQuery(search, entityMap, schema);
-      const { query: sparql, resolvedMode } = buildQuery(parsed, schema);
+      const parsed = parseQuery(search, entityMap, schema, lang);
+      const { query: sparql, resolvedMode } = buildQuery(parsed, schema, lang);
 
       if (import.meta.env.DEV) {
         console.group(`[AnimalesPage] Búsqueda: "${search}"`)
@@ -309,7 +309,7 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
     return (
       <div className="vet-state">
         <span className="vet-spinner" />
-        {ontologyLoading ? t.loadingOntology : schemaLoading ? 'Analizando schema…' : t.loadingSparql}
+        {ontologyLoading ? t.loadingOntology : schemaLoading ? t.loadingSchema : t.loadingSparql}
       </div>
     );
   }
@@ -374,7 +374,7 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
           </div>
 
         ) : sparqlResults !== null && queryMeta !== null ? (
-          <ResultRenderer results={sparqlResults} queryMeta={queryMeta} lang={lang} />
+          <ResultRenderer results={sparqlResults} queryMeta={queryMeta} lang={lang} schema={schema ?? undefined} />
 
         ) : null}
       </div>

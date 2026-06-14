@@ -1,4 +1,5 @@
 import { type Language, type Translations, useTranslations } from '../i18n/translations'
+import type { OntologySchema } from '../services/schemaDiscovery'
 
 export interface QueryMeta {
   searchMode: 'entity' | 'content' | 'multi-entity' | 'fallback'
@@ -12,6 +13,7 @@ interface ResultRendererProps {
   results: Record<string, string>[]
   queryMeta: QueryMeta
   lang: Language
+  schema?: OntologySchema
 }
 
 function shortUri(uri: string): string {
@@ -22,9 +24,10 @@ function shortUri(uri: string): string {
 }
 const SKIP_KEYS = new Set(['instance', 'subject', 'object', 'enf', 'servicio', 'labelPred'])
 
-function colLabel(key: string): string {
+function colLabel(key: string, propLabels?: Record<string, string>): string {
   if (/^var\d+$/.test(key)) return key
   const stripped = key.replace(/^var\d+_/, '')
+  if (propLabels?.[stripped]) return propLabels[stripped]
   return stripped
     .replace(/([A-Z])/g, ' $1')
     .trim()
@@ -57,8 +60,17 @@ function ResultTable({
   )
 }
 
-export default function ResultRenderer({ results, queryMeta, lang }: ResultRendererProps) {
+export default function ResultRenderer({ results, queryMeta, lang, schema }: ResultRendererProps) {
   const t = useTranslations(lang)
+
+  // Derive per-language label lookups from the ontology schema (no hardcoding).
+  // Falls back to empty objects if schema isn't available yet.
+  const propLabels: Record<string, string> = schema
+    ? Object.fromEntries([...schema.propLabelMap.entries()].map(([k, v]) => [k, v[lang] ?? k]))
+    : {}
+  const classLabels: Record<string, string> = schema
+    ? Object.fromEntries([...schema.classLabelMap.entries()].map(([k, v]) => [k, v[lang] ?? k]))
+    : {}
 
   const columns = results && results.length > 0
     ? Object.keys(results[0]).filter(k => !SKIP_KEYS.has(k) && !/^var\d+$/.test(k))
@@ -79,16 +91,16 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
   if (queryMeta.searchMode === 'content') {
     return (
       <ResultTable count={results.length} t={t} head={<>
-        <th>{translateValue('Tipo')}</th>
-        <th>{translateValue('Nombre')}</th>
-        <th>{translateValue('Campo')}</th>
-        <th>{translateValue('Valor encontrado')}</th>
+        <th>{t.colType}</th>
+        <th>{t.colName}</th>
+        <th>{t.colField}</th>
+        <th>{t.colFoundValue}</th>
       </>}>
         {results.map((r, i) => (
           <tr key={i}>
-            <td>{r.className ? translateValue(r.className) : '—'}</td>
+            <td>{r.className ? (classLabels[r.className] ?? translateValue(r.className)) : '—'}</td>
             <td>{r.labelVal ? translateValue(r.labelVal) : shortUri(r.instance ?? '')}</td>
-            <td>{r.matchProp ? colLabel(shortUri(r.matchProp)) : '—'}</td>
+            <td>{r.matchProp ? colLabel(shortUri(r.matchProp), propLabels) : '—'}</td>
             <td>{translateValue(r.matchVal)}</td>
           </tr>
         ))}
@@ -101,7 +113,7 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
     const contexts = queryMeta.entityContexts
     return (
       <ResultTable count={results.length} t={t} head={<>
-        {contexts.map((ctx, i) => <th key={i}>{translateValue(ctx.className)}</th>)}
+        {contexts.map((ctx, i) => <th key={i}>{classLabels[ctx.className] ?? translateValue(ctx.className)}</th>)}
       </>}>
         {results.map((r, i) => (
           <tr key={i}>
@@ -119,7 +131,7 @@ export default function ResultRenderer({ results, queryMeta, lang }: ResultRende
   // ── Single-class / fallback ───────────────────────────────────────────────
   return (
     <ResultTable count={results.length} t={t} head={<>
-      {columns.map(col => <th key={col}>{colLabel(col)}</th>)}
+      {columns.map(col => <th key={col}>{colLabel(col, propLabels)}</th>)}
     </>}>
       {results.map((r, i) => (
         <tr key={i}>
