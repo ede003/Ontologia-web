@@ -1,4 +1,4 @@
-import { queryDBpedia } from '../services/dbpediaService'
+import { queryDBpedia, DbpediaNetworkError } from '../services/dbpediaService'
 
 const LOOKUP_API = 'https://lookup.dbpedia.org/api/search'
 const LOOKUP_TIMEOUT_MS = 5000
@@ -10,29 +10,33 @@ const ANIMAL_TYPE_HINTS = [
   'Dog', 'Cat', 'Bird', 'Reptile', 'Fish', 'Amphibian',
 ]
 
-const DISEASE_TYPE_HINTS = [
-  'Disease', 'Disorder', 'Condition', 'Infection', 'Syndrome', 'MedicalCondition',
-]
-
 type LookupDoc = {
   resource?: string[]
   typeName?: string[]
   type?: string[]
   classes?: Array<{ '@id'?: string; label?: string }>
+  comment?: string | string[]
 }
 
 // Slug cache: term → resolved slug (null = definitively not found; absent = not yet queried)
 const _slugCache = new Map<string, string | null>()
+// Comment cache: slug → Lookup API snippet (used as abstract when data endpoint has none)
+const _commentCache = new Map<string, string>()
+
+function stripHtml(html: unknown): string {
+  const text = Array.isArray(html) ? html[0] : html
+  if (typeof text !== 'string') return ''
+  return text.replace(/<[^>]+>/g, '').trim()
+}
 
 function docMatchesTypeHints(doc: LookupDoc, hints: string[]): boolean {
-  const lowerHints = hints.map(h => h.toLowerCase())
   const types = [
     ...(doc.typeName ?? []),
     ...(doc.type ?? []),
     ...(doc.classes ?? []).map(c => c['@id'] ?? ''),
     ...(doc.classes ?? []).map(c => c.label ?? ''),
   ]
-  return types.some(t => lowerHints.some(h => t.toLowerCase().includes(h)))
+  return types.some(t => hints.some(h => new RegExp(`\\b${h}\\b`, 'i').test(t)))
 }
 
 function slugFromDoc(doc: LookupDoc): string | null {
@@ -46,40 +50,40 @@ async function resolveSlugViaLookup(term: string, typeHints: string[]): Promise<
   if (_slugCache.has(term)) return _slugCache.get(term)!
 
   const url = `${LOOKUP_API}?query=${encodeURIComponent(term)}&maxResults=${LOOKUP_MAX_RESULTS}&format=json`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), LOOKUP_TIMEOUT_MS)
+  if (import.meta.env.DEV) console.log(`[lookup] GET ${url}`)
   try {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), LOOKUP_TIMEOUT_MS)
     const res = await fetch(url, {
       signal: controller.signal,
       headers: { Accept: 'application/json' },
     })
     clearTimeout(timer)
+    if (import.meta.env.DEV) console.log(`[lookup] status=${res.status} ok=${res.ok}`)
     if (!res.ok) return null  // transient HTTP error — don't cache, allow retry
     const data = await res.json() as { docs?: LookupDoc[] }
     const docs = data?.docs ?? []
-    // Prefer a doc whose declared types match the query intent; fall back to rank-1
+    if (import.meta.env.DEV) {
+      console.log(`[lookup] "${term}" → ${docs.length} docs`)
+      docs.forEach((d, i) => console.log(`  [${i}] resource=${d.resource?.[0]} typeName=${JSON.stringify(d.typeName)}`))
+    }
     const best = docs.find(d => docMatchesTypeHints(d, typeHints)) ?? docs[0] ?? null
     const slug = best ? slugFromDoc(best) : null
-    _slugCache.set(term, slug)  // cache definitive result (including null = not found)
+    if (import.meta.env.DEV) console.log(`[lookup] best → slug="${slug ?? 'null'}"`)
+
+    // Cache the Lookup snippet as a description fallback
+    if (slug && best?.comment) {
+      const comment = stripHtml(best.comment)
+      if (comment) _commentCache.set(slug, comment)
+    }
+
+    _slugCache.set(term, slug)
     return slug
-  } catch {
-    return null  // network failure / timeout — don't cache, allow retry
+  } catch (err) {
+    clearTimeout(timer)
+    if (import.meta.env.DEV) console.warn(`[lookup] CATCH "${term}":`, err)
+    throw new DbpediaNetworkError()
   }
-}
-
-function buildDbpediaQuery(slug: string, lang: string, withThumbnail = false): string {
-  const uri = `http://dbpedia.org/resource/${slug}`
-  const thumbSelect = withThumbnail ? ' ?thumbnail' : ''
-  const thumbOptional = withThumbnail ? `\n  OPTIONAL { <${uri}> dbo:thumbnail ?thumbnail }` : ''
-  return `PREFIX dbo:  <http://dbpedia.org/ontology/>
-PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-
-SELECT ?abstract${thumbSelect} ?page ?dbpediaUri WHERE {
-  BIND(<${uri}> AS ?dbpediaUri)
-  <${uri}> dbo:abstract ?abstract .${thumbOptional}
-  OPTIONAL { <${uri}> foaf:isPrimaryTopicOf ?page }
-  FILTER (lang(?abstract) = '${lang}' || lang(?abstract) = 'en' || lang(?abstract) = 'es')
-} ORDER BY (lang(?abstract) != '${lang}') LIMIT 3`
 }
 
 export async function getAnimalInfo(
@@ -89,7 +93,7 @@ export async function getAnimalInfo(
 ): Promise<Record<string, string>[]> {
   const razaTrimmed = raza.trim()
   const especieTrimmed = especie.trim()
-  // Combined term disambiguates: "Persa gato" → Persian cat, not Persia/Irán
+  // Combined term disambiguates: "Persian Cat" → Persian cat breed, not Persia/Irán
   const combined = [razaTrimmed, especieTrimmed].filter(Boolean).join(' ')
   if (!combined) return []
 
@@ -104,15 +108,23 @@ export async function getAnimalInfo(
 
   if (import.meta.env.DEV) console.log(`[dbpediaRepository] getAnimalInfo(especie="${especie}", raza="${raza}", lang="${lang}") combined="${combined}" → slug="${slug ?? 'null'}"`)
   if (!slug) return []
-  return queryDBpedia(buildDbpediaQuery(slug, lang, true))
-}
 
-export async function getEnfermedadInfo(
-  nombreEnfermedad: string,
-  lang = 'es',
-): Promise<Record<string, string>[]> {
-  if (!nombreEnfermedad.trim()) return []
-  const slug = await resolveSlugViaLookup(nombreEnfermedad, DISEASE_TYPE_HINTS)
-  if (!slug) return []
-  return queryDBpedia(buildDbpediaQuery(slug, lang))
+  const rows = await queryDBpedia(slug, lang)
+  const lookupComment = _commentCache.get(slug) ?? ''
+
+  if (rows.length > 0) {
+    const row = rows[0]
+    // Prefer the Lookup snippet over a short dbo:description ("cat breed")
+    if (lookupComment && (!row.abstract || row.abstract.length < lookupComment.length)) {
+      return [{ ...row, abstract: lookupComment }, ...rows.slice(1)]
+    }
+    return rows
+  }
+
+  // Data endpoint returned nothing — build a minimal row from Lookup snippet
+  if (lookupComment) {
+    return [{ dbpediaUri: `http://dbpedia.org/resource/${slug}`, abstract: lookupComment }]
+  }
+
+  return []
 }
