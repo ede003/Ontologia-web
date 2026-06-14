@@ -17,6 +17,7 @@ export interface Translations {
 
   // ── Estados de carga y error ────────────────────────────
   loadingOntology: string;
+  loadingSchema: string;
   loadingSparql: string;
   errorPrefix: string;
 
@@ -62,6 +63,10 @@ export interface Translations {
 
   // ── ResultRenderer ───────────────────────────────────────
   colRelation: string;
+  colType: string;              // cabecera "Tipo" en content search
+  colField: string;             // cabecera "Campo"
+  colFoundValue: string;        // cabecera "Valor encontrado"
+  drawerAnimalFallback: string; // fallback cuando nombreAnimal es undefined
   resultCount: string;          // ej: "resultado" / "result" / "resultado"
   resultCountPlural: string;    // ej: "resultados" / "results" / "resultados"
   noResultsSearch: string;
@@ -71,6 +76,7 @@ export interface Translations {
 
   // ── DBpedia: idioma de consulta ──────────────────────────
   dbpediaLang: string;          // "es" / "en" / "pt"
+
 }
 
 // ============================================================
@@ -85,6 +91,7 @@ const es: Translations = {
   allSpecies: 'Todas las especies',
 
   loadingOntology: 'Cargando ontología…',
+  loadingSchema: 'Analizando schema…',
   loadingSparql: 'Ejecutando consulta SPARQL…',
   errorPrefix: 'Error',
 
@@ -126,12 +133,17 @@ const es: Translations = {
   tableVeterinarian: 'Veterinario',
 
   colRelation: 'Relación',
+  colType: 'Tipo',
+  colField: 'Campo',
+  colFoundValue: 'Valor encontrado',
+  drawerAnimalFallback: 'Animal',
   resultCount: 'resultado',
   resultCountPlural: 'resultados',
   noResultsSearch: 'Sin resultados para esta búsqueda.',
 
   languageLabel: 'Idioma',
   dbpediaLang: 'es',
+
 };
 
 // ============================================================
@@ -146,6 +158,7 @@ const en: Translations = {
   allSpecies: 'All species',
 
   loadingOntology: 'Loading ontology…',
+  loadingSchema: 'Analysing schema…',
   loadingSparql: 'Running SPARQL query…',
   errorPrefix: 'Error',
 
@@ -187,12 +200,17 @@ const en: Translations = {
   tableVeterinarian: 'Veterinarian',
 
   colRelation: 'Relation',
+  colType: 'Type',
+  colField: 'Field',
+  colFoundValue: 'Found value',
+  drawerAnimalFallback: 'Animal',
   resultCount: 'result',
   resultCountPlural: 'results',
   noResultsSearch: 'No results for this search.',
 
   languageLabel: 'Language',
   dbpediaLang: 'en',
+
 };
 
 // ============================================================
@@ -207,6 +225,7 @@ const pt: Translations = {
   allSpecies: 'Todas as espécies',
 
   loadingOntology: 'Carregando ontologia…',
+  loadingSchema: 'Analisando schema…',
   loadingSparql: 'Executando consulta SPARQL…',
   errorPrefix: 'Erro',
 
@@ -248,12 +267,17 @@ const pt: Translations = {
   tableVeterinarian: 'Veterinário',
 
   colRelation: 'Relação',
+  colType: 'Tipo',
+  colField: 'Campo',
+  colFoundValue: 'Valor encontrado',
+  drawerAnimalFallback: 'Animal',
   resultCount: 'resultado',
   resultCountPlural: 'resultados',
   noResultsSearch: 'Sem resultados para esta busca.',
 
   languageLabel: 'Idioma',
   dbpediaLang: 'pt',
+
 };
 
 // ============================================================
