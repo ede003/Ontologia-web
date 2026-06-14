@@ -9,9 +9,12 @@ export interface UseOntologyResult {
   error: string | null
 }
 
-const _useStore = createSingletonResource<Language, Store>(lang => loadOntology(lang))
+// The store holds all three languages — language filtering happens at query time.
+// Use a constant key so switching language never re-parses the RDF file or
+// re-runs the 20-query schema discovery.
+const _useStore = createSingletonResource<true, Store>(() => loadOntology('es'))
 
-export function useOntology(lang: Language): UseOntologyResult {
-  const { value: store, loading, error } = _useStore(lang)
+export function useOntology(_lang: Language): UseOntologyResult {
+  const { value: store, loading, error } = _useStore(true)
   return { store, loading, error }
 }
