@@ -1,7 +1,11 @@
 import type { OntologySchema, ClassSchema, RelationEdge } from '../services/schemaDiscovery'
 import type { ParsedQuery, EntityContext, PropertyFilter } from './queryParser'
+import type { Language } from '../i18n/translations'
 
 const VET_NS = 'http://www.semanticweb.org/grupo14/ontologias/veterinaria#'
+
+// Properties stored as plain literals (no xml:lang tag) — excluded from lang filter
+const UNTAGGED_PROPS = new Set(['telefono'])
 
 export const PREFIXES = `PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -24,19 +28,26 @@ function optionalsForClass(
   cls: ClassSchema,
   instanceVar: string,
   propVarPrefix: string,
-  skipProp?: string,
+  skipProp: string | undefined,
+  lang: Language,
 ): string {
   return cls.datatypeProps
     .filter(p => p.fullIri !== skipProp)
-    .map(p => `  OPTIONAL { ?${instanceVar} <${p.fullIri}> ?${propVarPrefix}${p.localName} }`)
+    .map(p => {
+      const varName = `?${propVarPrefix}${p.localName}`
+      const langFilter = UNTAGGED_PROPS.has(p.localName)
+        ? `FILTER(lang(${varName}) = "")`
+        : `FILTER(lang(${varName}) = "${lang}")`
+      return `  OPTIONAL { ?${instanceVar} <${p.fullIri}> ${varName} . ${langFilter} }`
+    })
     .join('\n')
 }
 
-function buildSingleEntityQuery(context: EntityContext, schema: OntologySchema): string {
+function buildSingleEntityQuery(context: EntityContext, schema: OntologySchema, lang: Language): string {
   const cls = schema.classes.get(context.className)
-  if (!cls) return buildContentSearchQuery(context.className, schema)
+  if (!cls) return buildContentSearchQuery(context.className, schema, lang)
 
-  const optionalBlocks = optionalsForClass(cls, 'instance', '', cls.labelProperty)
+  const optionalBlocks = optionalsForClass(cls, 'instance', '', cls.labelProperty, lang)
   const labelLocalName = cls.labelProperty.split('#').pop() ?? ''
 
   const filterClauses = context.propertyFilters.map(f => {
@@ -94,12 +105,13 @@ function buildMultiEntityQuery(
   contexts: EntityContext[],
   rawInput: string,
   schema: OntologySchema,
+  lang: Language,
 ): { query: string; resolvedMode: 'multi-entity' | 'content' } {
   const classNames = contexts.map(c => c.className)
   const joinSteps = findJoinPath(classNames, schema)
 
   if (!joinSteps) {
-    return { query: buildContentSearchQuery(rawInput, schema), resolvedMode: 'content' }
+    return { query: buildContentSearchQuery(rawInput, schema, lang), resolvedMode: 'content' }
   }
 
   const typePatterns = contexts.map((c, i) => {
@@ -122,7 +134,13 @@ function buildMultiEntityQuery(
 
     const optionals = cls.datatypeProps
       .filter(p => p.fullIri !== cls.labelProperty)
-      .map(p => `  OPTIONAL { ?var${i} <${p.fullIri}> ?var${i}_${p.localName} }`)
+      .map(p => {
+        const varName = `?var${i}_${p.localName}`
+        const langFilter = UNTAGGED_PROPS.has(p.localName)
+          ? `FILTER(lang(${varName}) = "")`
+          : `FILTER(lang(${varName}) = "${lang}")`
+        return `  OPTIONAL { ?var${i} <${p.fullIri}> ${varName} . ${langFilter} }`
+      })
       .join('\n')
 
     const clsLabelLocalName = cls.labelProperty.split('#').pop() ?? ''
@@ -150,7 +168,7 @@ ${optionalAndFilterBlocks}
   }
 }
 
-function buildContentSearchQuery(term: string, schema: OntologySchema): string {
+function buildContentSearchQuery(term: string, schema: OntologySchema, lang: Language): string {
   const t = term.toLowerCase().trim()
   if (t.length < 3) {
     return `${PREFIXES}\nSELECT DISTINCT ?instance ?className ?labelVal ?matchProp ?matchVal WHERE { FILTER(false) }`
@@ -159,6 +177,9 @@ function buildContentSearchQuery(term: string, schema: OntologySchema): string {
     .map(iri => `<${iri}>`)
     .join(', ')
 
+  // Match against vet: datatype properties OR against rdfs:label filtered by
+  // the active language. This makes multilingual labels (e.g. "Vaccination N"
+  // in English) discoverable even though data values are stored in Spanish.
   return `${PREFIXES}
 SELECT ?instance ?className ?labelVal ?matchProp ?matchVal WHERE {
   {
@@ -167,13 +188,19 @@ SELECT ?instance ?className ?labelVal ?matchProp ?matchVal WHERE {
       FILTER(STRSTARTS(STR(?class), "${VET_NS}"))
       BIND(STRAFTER(STR(?class), "#") AS ?className)
       ?instance ?matchProp ?matchVal .
-      FILTER(isLiteral(?matchVal) && CONTAINS(LCASE(str(?matchVal)), "${t}"))
-      FILTER(STRSTARTS(STR(?matchProp), "${VET_NS}"))
+      FILTER(
+        isLiteral(?matchVal) && CONTAINS(LCASE(str(?matchVal)), "${t}")
+        && (
+          (?matchProp = rdfs:label && lang(?matchVal) = "${lang}")
+          || (STRSTARTS(STR(?matchProp), "${VET_NS}") && (lang(?matchVal) = "" || lang(?matchVal) = "${lang}"))
+        )
+      )
     }
   }
   OPTIONAL {
     ?instance ?labelPred ?labelVal .
     FILTER(?labelPred IN (${labelProps}))
+    FILTER(lang(?labelVal) = "${lang}" || lang(?labelVal) = "")
   }
 }
 LIMIT 200`
@@ -184,7 +211,7 @@ export interface BuildQueryResult {
   resolvedMode: ParsedQuery['searchMode']
 }
 
-export function buildQuery(parsed: ParsedQuery, schema: OntologySchema): BuildQueryResult {
+export function buildQuery(parsed: ParsedQuery, schema: OntologySchema, lang: Language = 'es'): BuildQueryResult {
   console.group('[sparqlBuilder] buildQuery')
   console.log('searchMode:', parsed.searchMode, '| contexts:', parsed.entityContexts.map(c => c.className))
 
@@ -195,13 +222,13 @@ export function buildQuery(parsed: ParsedQuery, schema: OntologySchema): BuildQu
       result = {
         resolvedMode: 'entity',
         query: parsed.entityContexts.length > 0
-          ? buildSingleEntityQuery(parsed.entityContexts[0], schema)
-          : buildContentSearchQuery(parsed.rawInput, schema),
+          ? buildSingleEntityQuery(parsed.entityContexts[0], schema, lang)
+          : buildContentSearchQuery(parsed.rawInput, schema, lang),
       }
       break
 
     case 'multi-entity': {
-      const r = buildMultiEntityQuery(parsed.entityContexts, parsed.rawInput, schema)
+      const r = buildMultiEntityQuery(parsed.entityContexts, parsed.rawInput, schema, lang)
       result = { query: r.query, resolvedMode: r.resolvedMode }
       break
     }
@@ -211,7 +238,7 @@ export function buildQuery(parsed: ParsedQuery, schema: OntologySchema): BuildQu
     default:
       result = {
         resolvedMode: parsed.searchMode === 'fallback' ? 'fallback' : 'content',
-        query: buildContentSearchQuery(parsed.rawInput, schema),
+        query: buildContentSearchQuery(parsed.rawInput, schema, lang),
       }
       break
   }
