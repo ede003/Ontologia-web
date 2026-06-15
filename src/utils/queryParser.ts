@@ -36,21 +36,27 @@ export interface ParsedQuery {
 }
 
 function findNumericProp(cls: ClassSchema): string | null {
+  let firstNumeric: string | null = null
   for (const prop of cls.datatypeProps) {
-    if (
-      prop.distinctValues.length > 0 &&
-      prop.distinctValues.every(v => !isNaN(Number(v)) && v.trim() !== '')
-    ) {
+    const values = prop.distinctValues.filter(v => v.trim() !== '')
+    if (values.length === 0 || !values.every(v => !isNaN(Number(v)))) continue
+    if (firstNumeric === null) firstNumeric = prop.localName
+    // Prefer integer-valued properties: an age in years is a whole number, whereas
+    // measurements like weight carry decimals (e.g. "29.0"). This disambiguates
+    // "3 años" → edad instead of peso without hardcoding property names.
+    if (values.every(v => Number.isInteger(Number(v)) && !v.includes('.'))) {
       return prop.localName
     }
   }
-  return null
+  return firstNumeric
 }
 
 function extractAge(tokens: string[]): { age: string | null; remaining: string[] } {
   const rem = [...tokens]
+  // The Spanish tokenizer strips accents (años → anos), so accept both forms.
+  const ageUnits = new Set(['años', 'año', 'anos', 'ano', 'years', 'year'])
   for (let i = 0; i < rem.length - 1; i++) {
-    if (/^\d+$/.test(rem[i]) && (rem[i + 1] === 'años' || rem[i + 1] === 'año' || rem[i + 1] === 'years' || rem[i + 1] === 'year')) {
+    if (/^\d+$/.test(rem[i]) && ageUnits.has(rem[i + 1])) {
       const age = rem[i]
       rem.splice(i, 2)
       return { age, remaining: rem }
@@ -139,10 +145,13 @@ function longestMatch(tokens: string[], map: EntityMap): TokenMatch | null {
   for (let len = tokens.length; len >= 1; len--) {
     for (let start = 0; start <= tokens.length - len; start++) {
       const phrase = tokens.slice(start, start + len).join(' ')
-      const valueMatches = lookupPhrase(phrase)
-      if (valueMatches) return { type: 'value', matches: valueMatches, start, len }
+      // Class names win over property values at equal length: a structural term
+      // like "animal" must resolve to the Animal class, not to incidental mentions
+      // inside categorical values (e.g. "Nutrición animal" in especialidad).
       const clsName = lookupClass(phrase)
       if (clsName) return { type: 'class', className: clsName, start, len }
+      const valueMatches = lookupPhrase(phrase)
+      if (valueMatches) return { type: 'value', matches: valueMatches, start, len }
     }
   }
   return null
@@ -165,14 +174,16 @@ export function parseQuery(
   const terms: string[] = isSpanish ? stopwords.removeStopwords(allTokens) : [...allTokens]
   const stemmed: string[] = isSpanish ? stemmer.tokenizeAndStem(lower, false) : []
 
-  // Step 1 — Extraer edad y sexo (patrones de lenguaje, no ontología)
+  // Step 1 — Extraer edad y sexo (patrones de lenguaje, no ontología).
+  // Se extraen de los tokens crudos: removeStopwords elimina los números sueltos
+  // (p. ej. "3"), por lo que la edad debe detectarse antes de filtrar stopwords.
+  const { age, remaining: afterAge } = extractAge([...allTokens])
+  const { sexo, remaining: afterSexo } = extractSexo(afterAge)
+
+  // Quitar stopwords solo para la detección de entidades/valores.
   let workingTokens = isSpanish
-    ? stopwords.removeStopwords([...allTokens]).filter(t => t.length > 0)
-    : [...allTokens]
-  const { age, remaining: afterAge } = extractAge(workingTokens)
-  workingTokens = afterAge
-  const { sexo, remaining: afterSexo } = extractSexo(workingTokens)
-  workingTokens = afterSexo
+    ? stopwords.removeStopwords(afterSexo).filter(t => t.length > 0)
+    : afterSexo.filter(t => t.length > 0)
 
   // Step 2 — Greedy longest-match para detectar entidades y valores de propiedades
   const contextMap = new Map<string, EntityContext>()
@@ -185,7 +196,7 @@ export function parseQuery(
     if (match.type === 'value') {
       for (const m of match.matches) {
         const ctx = getOrCreate(contextMap, m.className)
-        addFilter(ctx, m.propertyLocalName, m.canonicalValue, 'exact')
+        addFilter(ctx, m.propertyLocalName, m.canonicalValue, m.matchType)
       }
     } else {
       getOrCreate(contextMap, match.className)
