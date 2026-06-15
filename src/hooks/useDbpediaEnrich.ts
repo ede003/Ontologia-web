@@ -10,7 +10,9 @@ const VET_NS = 'http://www.semanticweb.org/grupo14/ontologias/veterinaria#'
 const _cache = new Map<string, Record<string, string>[]>();
 
 // ── Persistent cache (localStorage) ──────────────────────────────────────────
-const STORAGE_PREFIX = 'dbpedia_v1:'
+// v2: localized-abstract fix — invalidates entries cached with the old
+// English-fallback behavior so Spanish/Portuguese views refresh correctly.
+const STORAGE_PREFIX = 'dbpedia_v2:'
 const CACHE_TTL_MS   = 30 * 24 * 60 * 60 * 1000 // 30 days
 
 function loadPersisted(key: string): Record<string, string>[] | null {

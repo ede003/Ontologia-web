@@ -17,13 +17,11 @@ function getLang(v: JsonLdValue): string {
   return v.lang ?? v['xml:lang'] ?? ''
 }
 
+// Return the value for the requested language only. No cross-language fallback:
+// showing an English abstract while the UI is in Spanish is exactly the bug we
+// want to avoid. The caller decides what to do when a language is missing.
 function pickLang(values: JsonLdValue[], lang: string): string {
-  return (
-    values.find(v => getLang(v) === lang)?.value ??
-    values.find(v => getLang(v) === 'en')?.value ??
-    values.find(v => getLang(v) === 'es')?.value ??
-    ''
-  )
+  return values.find(v => getLang(v) === lang)?.value ?? ''
 }
 
 export async function queryDBpedia(slug: string, lang = 'en'): Promise<Record<string, string>[]> {

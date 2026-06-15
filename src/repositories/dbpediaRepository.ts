@@ -112,18 +112,21 @@ export async function getAnimalInfo(
   const rows = await queryDBpedia(slug, lang)
   const lookupComment = _commentCache.get(slug) ?? ''
 
+  // The Lookup snippet is always English, so only use it as the abstract in
+  // English mode. In other languages we keep the localized description (or no
+  // abstract at all) rather than surfacing English text in a non-English UI.
+  const canUseComment = lang === 'en' && !!lookupComment
+
   if (rows.length > 0) {
     const row = rows[0]
-    // Only use the Lookup snippet (always English) when the data endpoint returned no abstract.
-    // Replacing a correctly-localised abstract with an English fallback would break lang switching.
-    if (lookupComment && !row.abstract) {
+    if (canUseComment && !row.abstract) {
       return [{ ...row, abstract: lookupComment }, ...rows.slice(1)]
     }
     return rows
   }
 
-  // Data endpoint returned nothing — build a minimal row from Lookup snippet (English fallback)
-  if (lookupComment) {
+  // Data endpoint returned nothing — fall back to the Lookup snippet (English only)
+  if (canUseComment) {
     return [{ dbpediaUri: `http://dbpedia.org/resource/${slug}`, abstract: lookupComment }]
   }
 
