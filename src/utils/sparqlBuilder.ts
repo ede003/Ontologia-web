@@ -7,6 +7,16 @@ const VET_NS = 'http://www.semanticweb.org/grupo14/ontologias/veterinaria#'
 // Properties stored as plain literals (no xml:lang tag) — excluded from lang filter
 const UNTAGGED_PROPS = new Set(['telefono'])
 
+// Returns true when all distinct values of a property are numeric (e.g. edad, peso).
+// Numeric properties may be stored without a language tag, so the OPTIONAL must
+// accept both tagged ("3"@es) and untagged ("3" / "3"^^xsd:integer) literals.
+function isNumericProp(p: { distinctValues: string[] }): boolean {
+  return (
+    p.distinctValues.length > 0 &&
+    p.distinctValues.every(v => !isNaN(Number(v)) && v.trim() !== '')
+  )
+}
+
 export const PREFIXES = `PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX owl:  <http://www.w3.org/2002/07/owl#>
@@ -35,9 +45,12 @@ function optionalsForClass(
     .filter(p => p.fullIri !== skipProp)
     .map(p => {
       const varName = `?${propVarPrefix}${p.localName}`
+      // Numeric props may be stored without a language tag — accept both tagged and untagged
       const langFilter = UNTAGGED_PROPS.has(p.localName)
         ? `FILTER(lang(${varName}) = "")`
-        : `FILTER(lang(${varName}) = "${lang}")`
+        : isNumericProp(p)
+          ? `FILTER(lang(${varName}) = "${lang}" || lang(${varName}) = "")`
+          : `FILTER(lang(${varName}) = "${lang}")`
       return `  OPTIONAL { ?${instanceVar} <${p.fullIri}> ${varName} . ${langFilter} }`
     })
     .join('\n')
@@ -125,7 +138,8 @@ function buildMultiEntityQuery(
   const labelPatterns = contexts.map((c, i) => {
     const cls = schema.classes.get(c.className)
     if (!cls) return ''
-    return `  OPTIONAL { ?var${i} <${cls.labelProperty}> ?var${i}Name }`
+    // Lang filter prevents one row per language variant when labels are multilingual
+    return `  OPTIONAL { ?var${i} <${cls.labelProperty}> ?var${i}Name . FILTER(lang(?var${i}Name) = "${lang}" || lang(?var${i}Name) = "") }`
   }).join('\n')
 
   const optionalAndFilterBlocks = contexts.map((c, i) => {
@@ -138,7 +152,9 @@ function buildMultiEntityQuery(
         const varName = `?var${i}_${p.localName}`
         const langFilter = UNTAGGED_PROPS.has(p.localName)
           ? `FILTER(lang(${varName}) = "")`
-          : `FILTER(lang(${varName}) = "${lang}")`
+          : isNumericProp(p)
+            ? `FILTER(lang(${varName}) = "${lang}" || lang(${varName}) = "")`
+            : `FILTER(lang(${varName}) = "${lang}")`
         return `  OPTIONAL { ?var${i} <${p.fullIri}> ${varName} . ${langFilter} }`
       })
       .join('\n')

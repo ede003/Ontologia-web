@@ -257,9 +257,12 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
     (queryMeta?.searchMode === 'entity' || queryMeta?.searchMode === 'fallback') &&
     (!queryMeta?.primaryType || queryMeta.primaryType === 'Animal');
 
-  const isAnimalRelationalMode =
-    queryMeta?.searchMode === 'multi-entity' &&
-    queryMeta?.entityContexts[0]?.className === 'Animal';
+  // Index of the Animal context in a multi-entity query (-1 if not present)
+  const animalContextIdx = queryMeta?.searchMode === 'multi-entity'
+    ? (queryMeta.entityContexts.findIndex(c => c.className === 'Animal'))
+    : -1;
+
+  const isAnimalRelationalMode = animalContextIdx >= 0;
 
   const especies = useMemo<string[]>(() => {
     const set = new Set<string>();
@@ -283,18 +286,23 @@ export function AnimalesPage({ lang, setLang }: AnimalesPageProps) {
     relationalAnimals: Individual[];
     enfermedadOverride: Map<string, string>;
   }>(() => {
-    if (!isAnimalRelationalMode || !sparqlResults) {
+    if (!isAnimalRelationalMode || !sparqlResults || animalContextIdx < 0) {
       return { relationalAnimals: [], enfermedadOverride: new Map() };
     }
-    const uriSet = new Set(sparqlResults.map(r => r.var0).filter(Boolean));
+    // Animal may be var0 or var1 depending on query order
+    const animalVar = `var${animalContextIdx}`;
+    const otherIdx = animalContextIdx === 0 ? 1 : 0;
+    const otherNameVar = `var${otherIdx}Name`;
+
+    const uriSet = new Set(sparqlResults.map(r => r[animalVar]).filter(Boolean));
     const matched = animales.filter(a => uriSet.has(a.uri));
     const filtered = matched.filter(a => !especieFilter || a.props.especie === especieFilter);
     const override = new Map<string, string>();
     for (const r of sparqlResults) {
-      if (r.var0 && r.var1Name) override.set(r.var0, r.var1Name);
+      if (r[animalVar] && r[otherNameVar]) override.set(r[animalVar], r[otherNameVar]);
     }
     return { relationalAnimals: filtered, enfermedadOverride: override };
-  }, [isAnimalRelationalMode, sparqlResults, animales, especieFilter]);
+  }, [isAnimalRelationalMode, animalContextIdx, sparqlResults, animales, especieFilter]);
 
   const visibleAnimals = useMemo<Individual[] | null>(() => {
     if (noSearch && especieFilter) return animalesPorEspecie;

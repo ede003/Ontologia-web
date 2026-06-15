@@ -11,6 +11,7 @@ export interface PropertyValueMatch {
   className: string
   propertyLocalName: string
   canonicalValue: string
+  matchType: 'exact' | 'contains'
 }
 
 export interface EntityMap {
@@ -31,6 +32,18 @@ function stem(word: string): string | undefined {
 
 function splitCamelCase(name: string): string[] {
   return name.replace(/([A-Z])/g, ' $1').trim().toLowerCase().split(/\s+/).filter(w => w.length > 0)
+}
+
+// A property is "free text" when most of its distinct values are long phrases
+// (descriptions, symptom notes, diagnoses) rather than short categorical names.
+// Such values would pollute the term index — e.g. "perro" appears inside
+// "Vacunacion anual perro Labrador Bruno" — so we keep them out of entity
+// detection. They remain reachable through the SPARQL content search.
+function isFreeTextProp(prop: { distinctValues: string[] }): boolean {
+  const values = prop.distinctValues.map(v => v.trim()).filter(Boolean)
+  if (values.length === 0) return false
+  const longValues = values.filter(v => v.split(/\s+/).length > 3).length
+  return longValues > values.length / 2
 }
 
 function addToClassMap(map: Map<string, string>, key: string, cls: string) {
@@ -95,12 +108,21 @@ function registerPropertyValue(
   incomingCount: Map<string, number>
 ) {
   if (!raw.trim()) return
-  const match: PropertyValueMatch = { className, propertyLocalName: propLocalName, canonicalValue: raw }
+  const exactMatch: PropertyValueMatch = { className, propertyLocalName: propLocalName, canonicalValue: raw, matchType: 'exact' }
   const lower = raw.toLowerCase().trim()
-  addToValueMap(map, lower, match, incomingCount)
+  addToValueMap(map, lower, exactMatch, incomingCount)
   if (!lower.includes(' ')) {
     const s = stem(lower)
-    if (s && s !== lower) addToValueMap(map, s, match, incomingCount)
+    if (s && s !== lower) addToValueMap(map, s, exactMatch, incomingCount)
+  } else {
+    // For multi-word values, register each significant word as a 'contains' match
+    // so "moquillo" can match "Moquillo Canino"
+    const containsMatch: PropertyValueMatch = { className, propertyLocalName: propLocalName, canonicalValue: raw, matchType: 'contains' }
+    for (const word of lower.split(/\s+/).filter(w => w.length > 2)) {
+      addToValueMap(map, word, containsMatch, incomingCount)
+      const ws = stem(word)
+      if (ws && ws !== word) addToValueMap(map, ws, containsMatch, incomingCount)
+    }
   }
 }
 
@@ -119,6 +141,9 @@ export async function buildEntityMap(_store: Store, schema: OntologySchema): Pro
     registerClassTerms(termToClass, cls.localName)
 
     for (const prop of cls.datatypeProps) {
+      // Skip free-text properties: their long values pollute the term index and
+      // are better served by the content search, not structured entity matching.
+      if (isFreeTextProp(prop)) continue
       for (const val of prop.distinctValues) {
         registerPropertyValue(termToPropertyValue, val, cls.localName, prop.localName, incomingCount)
       }
