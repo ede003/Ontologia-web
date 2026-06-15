@@ -297,3 +297,4 @@ export const translations: Record<Language, Translations> = { es, en, pt };
 export function useTranslations(lang: Language): Translations {
   return translations[lang];
 }
+export const searchTermTranslations: Record<string, string> = {}

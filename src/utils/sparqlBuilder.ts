@@ -4,12 +4,21 @@ import type { Language } from '../i18n/translations'
 
 const VET_NS = 'http://www.semanticweb.org/grupo14/ontologias/veterinaria#'
 
-// Properties stored as plain literals (no xml:lang tag) — excluded from lang filter
+// Properties stored as plain literals (no xml:lang tag)
 const UNTAGGED_PROPS = new Set(['telefono'])
 
-// Returns true when all distinct values of a property are numeric (e.g. edad, peso).
-// Numeric properties may be stored without a language tag, so the OPTIONAL must
-// accept both tagged ("3"@es) and untagged ("3" / "3"^^xsd:integer) literals.
+// Categorical properties whose values are always stored in Spanish
+// regardless of UI language — includes disease type and severity
+const CATEGORICAL_PROPS = new Set([
+  'sexo', 'especie', 'raza', 'color',
+  'tipoEnfermedad', 'nivelGravedad',
+  'tipoMedicamento', 'viaAdministracion',
+  'tipoVacuna', 'tipoTratamiento', 'tipoCirugia', 'tipoExamen',
+])
+
+// Numeric properties — stored as plain literals without lang tag
+const NUMERIC_PROPS = new Set(['edad', 'peso', 'dosisVacunacion', 'dosisMedicamento', 'duracion'])
+
 function isNumericProp(p: { distinctValues: string[] }): boolean {
   return (
     p.distinctValues.length > 0 &&
@@ -26,12 +35,34 @@ function filterClause(varName: string, filter: PropertyFilter): string {
   const v = `?${varName}`
   switch (filter.matchType) {
     case 'numeric':
-      return `FILTER(BOUND(${v}) && str(${v}) = "${filter.value}")`
+      // Numeric values have no lang tag — compare as string of the number
+      // Also try with .0 suffix in case stored as float (e.g. "3.0")
+      return `FILTER(BOUND(${v}) && (str(${v}) = "${filter.value}" || str(${v}) = "${filter.value}.0"))`
     case 'exact':
       return `FILTER(BOUND(${v}) && LCASE(str(${v})) = "${filter.value.toLowerCase()}")`
     case 'contains':
       return `FILTER(BOUND(${v}) && CONTAINS(LCASE(str(${v})), "${filter.value.toLowerCase()}"))`
   }
+}
+
+function getLangFilter(varName: string, localName: string, lang: Language): string {
+  // Numeric props have no lang tag — only accept untagged literals
+  if (NUMERIC_PROPS.has(localName)) {
+    return `FILTER(lang(${varName}) = "")`
+  }
+  if (UNTAGGED_PROPS.has(localName)) {
+    return `FILTER(lang(${varName}) = "")`
+  }
+  if (CATEGORICAL_PROPS.has(localName)) {
+    // Categorical values stored in Spanish regardless of UI language
+    return `FILTER(lang(${varName}) = "es" || lang(${varName}) = "")`
+  }
+  return `FILTER(lang(${varName}) = "${lang}" || lang(${varName}) = "")`
+}
+
+// Fallback name-based numeric check (used when schema values not available)
+function isNumericPropByName(localName: string): boolean {
+  return NUMERIC_PROPS.has(localName)
 }
 
 function optionalsForClass(
@@ -45,12 +76,11 @@ function optionalsForClass(
     .filter(p => p.fullIri !== skipProp)
     .map(p => {
       const varName = `?${propVarPrefix}${p.localName}`
-      // Numeric props may be stored without a language tag — accept both tagged and untagged
-      const langFilter = UNTAGGED_PROPS.has(p.localName)
+      // Use schema-based numeric detection first, fallback to name-based
+      const isNum = isNumericProp(p) || isNumericPropByName(p.localName)
+      const langFilter = isNum
         ? `FILTER(lang(${varName}) = "")`
-        : isNumericProp(p)
-          ? `FILTER(lang(${varName}) = "${lang}" || lang(${varName}) = "")`
-          : `FILTER(lang(${varName}) = "${lang}")`
+        : getLangFilter(varName, p.localName, lang)
       return `  OPTIONAL { ?${instanceVar} <${p.fullIri}> ${varName} . ${langFilter} }`
     })
     .join('\n')
@@ -138,7 +168,6 @@ function buildMultiEntityQuery(
   const labelPatterns = contexts.map((c, i) => {
     const cls = schema.classes.get(c.className)
     if (!cls) return ''
-    // Lang filter prevents one row per language variant when labels are multilingual
     return `  OPTIONAL { ?var${i} <${cls.labelProperty}> ?var${i}Name . FILTER(lang(?var${i}Name) = "${lang}" || lang(?var${i}Name) = "") }`
   }).join('\n')
 
@@ -150,11 +179,10 @@ function buildMultiEntityQuery(
       .filter(p => p.fullIri !== cls.labelProperty)
       .map(p => {
         const varName = `?var${i}_${p.localName}`
-        const langFilter = UNTAGGED_PROPS.has(p.localName)
+        const isNum = isNumericProp(p) || isNumericPropByName(p.localName)
+        const langFilter = isNum
           ? `FILTER(lang(${varName}) = "")`
-          : isNumericProp(p)
-            ? `FILTER(lang(${varName}) = "${lang}" || lang(${varName}) = "")`
-            : `FILTER(lang(${varName}) = "${lang}")`
+          : getLangFilter(varName, p.localName, lang)
         return `  OPTIONAL { ?var${i} <${p.fullIri}> ${varName} . ${langFilter} }`
       })
       .join('\n')
@@ -193,9 +221,6 @@ function buildContentSearchQuery(term: string, schema: OntologySchema, lang: Lan
     .map(iri => `<${iri}>`)
     .join(', ')
 
-  // Match against vet: datatype properties OR against rdfs:label filtered by
-  // the active language. This makes multilingual labels (e.g. "Vaccination N"
-  // in English) discoverable even though data values are stored in Spanish.
   return `${PREFIXES}
 SELECT ?instance ?className ?labelVal ?matchProp ?matchVal WHERE {
   {
@@ -208,7 +233,7 @@ SELECT ?instance ?className ?labelVal ?matchProp ?matchVal WHERE {
         isLiteral(?matchVal) && CONTAINS(LCASE(str(?matchVal)), "${t}")
         && (
           (?matchProp = rdfs:label && lang(?matchVal) = "${lang}")
-          || (STRSTARTS(STR(?matchProp), "${VET_NS}") && (lang(?matchVal) = "" || lang(?matchVal) = "${lang}"))
+          || (STRSTARTS(STR(?matchProp), "${VET_NS}") && (lang(?matchVal) = "" || lang(?matchVal) = "${lang}" || lang(?matchVal) = "es"))
         )
       )
     }
